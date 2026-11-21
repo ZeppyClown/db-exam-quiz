@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SC2207 — Cheat sheet</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  main { max-width:1100px; }
+  .grid { columns: 2 460px; column-gap:14px; }
+  .grid .card { break-inside: avoid; display:inline-block; width:100%; }
+  .card h3 { margin:0 0 6px; font-size:1rem; color:var(--accent); }
+  .card ul { margin:4px 0; padding-left:18px; } .card li { margin:3px 0; font-size:.9rem; }
+  pre { font-size:.78rem; line-height:1.35; }
+  table.t { border-collapse:collapse; width:100%; font-size:.85rem; }
+  table.t td, table.t th { border-bottom:1px solid var(--line); padding:4px; text-align:left; vertical-align:top; }
+  @media print { body { background:#fff; color:#000; } .home { display:none; } .card { border:1px solid #ccc; } pre { background:#f5f5f5; } }
+</style>
+</head>
+<body>
+<main>
+  <a class="home" href="./">← Home</a>
+  <h1>SC2207 cheat sheet</h1>
+  <div class="sub">Closed-book exam, so memorise this. SQL Server dialect. 4 questions × 25 marks: RA · ER+FD/NF · SQL · triggers/XML/index/views.</div>
+
+<div class="grid">
+
+<div class="card"><h3>SQL — query templates</h3>
+<pre>-- Division: "bought ALL X"  (double NOT EXISTS)
+SELECT S.name FROM Student S
+WHERE NOT EXISTS (SELECT * FROM Course C
+  WHERE NOT EXISTS (SELECT * FROM Took T
+    WHERE T.sid = S.sid AND T.cid = C.cid));
+
+-- Ties / "the most" (return ALL tied)
+... GROUP BY x HAVING COUNT(*) &gt;= ALL
+    (SELECT COUNT(*) FROM ... GROUP BY x);
+-- or WHERE v = (SELECT MAX(v) FROM ...)
+
+-- Group-wise max (per category, ties kept)
+SELECT P.category, P.pname
+FROM PRODUCT P JOIN ORDER_ITEM OI ON ...
+GROUP BY P.productid, P.category, P.pname
+HAVING SUM(OI.price*OI.quantity) &gt;= ALL (
+  SELECT SUM(OI2.price*OI2.quantity)
+  FROM PRODUCT P2 JOIN ORDER_ITEM OI2 ON ...
+  WHERE P2.category = P.category
+  GROUP BY P2.productid);
+
+-- Pairs "together" (self-join, no dup pairs)
+FROM T A JOIN T B ON A.sess = B.sess
+  AND A.sid &lt; B.sid
+
+-- Both X and Y
+WHERE EXISTS(..X..) AND EXISTS(..Y..)
+-- or HAVING COUNT(DISTINCT cat) = 2
+
+-- "Never did X" -> NOT EXISTS (not NOT IN)
+-- "No JOIN allowed" -> nested IN / EXISTS</pre>
+</div>
+
+<div class="card"><h3>SQL — traps</h3>
+<ul>
+<li>Inner join <b>drops</b> unmatched rows, so no 0 counts. LEFT JOIN + COUNT(*) → 1, LEFT JOIN + COUNT(col) → 0.</li>
+<li>OR join (from=id OR to=id): count every matching pair.</li>
+<li>NULL: <code>NOT IN</code> and <code>&gt;= ALL</code> → <b>empty</b> if the subquery has a NULL. <code>x &lt;&gt; 2</code> drops NULL rows. Aggregates skip NULLs, and AVG = SUM / non-null count.</li>
+<li><code>IS NULL</code> / <code>IS NOT NULL</code>, never <code>= NULL</code>.</li>
+<li>WHERE = row filter, before GROUP BY, no aggregates. HAVING = group filter.</li>
+<li>Every non-aggregated SELECT column must be in GROUP BY. Group by the <b>id</b>, not just the name (names can repeat).</li>
+<li>DISTINCT when joins can duplicate names. COUNT(DISTINCT x) for “different X”.</li>
+<li>Dates: <code>'2025-01-03'</code>, <code>YEAR(d)</code>, <code>MONTH(d)</code>, <code>FORMAT(d,'yyyy-MM')</code>, <code>GETDATE()</code>, <code>BETWEEN</code>.</li>
+<li>LIKE: <code>'J%'</code> starts with J, <code>'%Fashion%'</code> contains. Reserved names: <code>[ORDER]</code>, <code>[USER]</code>.</li>
+<li>UNION removes duplicates; UNION ALL keeps them. Add a constant column: <code>SELECT TID, Tname, 'Trainer' AS Role</code>.</li>
+<li>Conditional count: <code>SUM(CASE WHEN gender='M' THEN 1 ELSE 0 END)</code>.</li>
+<li>If a query “can't be constructed”, say why (a missing link or attribute). Some papers offer this option.</li>
+</ul></div>
+
+<div class="card"><h3>DDL / INSERT</h3>
+<pre>CREATE TABLE BOOKING (
+  PID          INT NOT NULL,
+  email        VARCHAR(100) NOT NULL,
+  booking_date DATE NOT NULL,
+  num_guests   INT CHECK (num_guests &gt; 0),
+  status VARCHAR(10) NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending','confirmed','cancelled')),
+  PRIMARY KEY (PID, email, booking_date),
+  FOREIGN KEY (PID) REFERENCES PACKAGE(PID),
+  FOREIGN KEY (email) REFERENCES [USER](email)
+    ON DELETE CASCADE
+);
+INSERT INTO T (c1, c2) VALUES (1, 'x');</pre>
+<ul><li>INSERT <b>parents before children</b> (FK order).</li>
+<li>Leave out a DEFAULT column to get the default. 4-digit id → INT. Money → DECIMAL(10,2).</li>
+<li>Constraint options: key · NOT NULL · attribute CHECK · tuple CHECK · <b>ASSERTION</b> (multi-table, checked on every change) · trigger.</li></ul></div>
+
+<div class="card"><h3>Triggers (SQL Server)</h3>
+<pre>CREATE TRIGGER name ON T
+AFTER INSERT, UPDATE, DELETE   -- or INSTEAD OF
+AS
+BEGIN
+  -- inserted = new rows, deleted = old rows
+  IF EXISTS (SELECT ... FROM inserted ...)
+  BEGIN
+    RAISERROR('message', 16, 1);
+    ROLLBACK TRANSACTION;
+  END
+END;
+
+-- Safest "keep total consistent" (one trigger):
+CREATE TRIGGER trg_total ON ORDER_ITEM
+AFTER INSERT, UPDATE, DELETE AS
+BEGIN
+  UPDATE O SET grandtotal = ISNULL((
+      SELECT SUM(I.quantity*I.price)
+      FROM ORDER_ITEM I
+      WHERE I.orderid = O.orderid), 0)
+  FROM [ORDER] O
+  WHERE O.orderid IN (SELECT orderid FROM inserted
+                      UNION SELECT orderid FROM deleted);
+END;</pre>
+<ul><li>Fires <b>once per statement</b>. inserted/deleted are tables that can hold many rows. <b>No NEW/OLD, no FOR EACH ROW.</b></li>
+<li>INSERT fills inserted · DELETE fills deleted · UPDATE fills both.</li>
+<li>Delta style: add the SUM from inserted, subtract the SUM from deleted, grouped by key.</li>
+<li>Limit check: count AFTER the insert, so test <code>&gt; limit</code>.</li>
+<li>Threshold “reaches 1000”: fire once, when the count before was &lt; 1000 and now ≥ 1000.</li></ul></div>
+
+<div class="card"><h3>Views · Index</h3>
+<pre>CREATE VIEW V(colA, colB) AS SELECT ...;</pre>
+<ul><li><b>View</b>: a stored query, rerun on use, always current. <b>Materialized</b>: stored result, fast to read, must be refreshed, takes space. <b>Temporary</b>: session only.</li>
+<li>Pros of views: security (hide columns), simpler queries, logical independence.</li>
+<li><code>CREATE INDEX StudentIndex ON STUDENT(gender, age);</code></li>
+<li>Composite: <b>equality columns first</b>, then the range/ORDER BY column.</li>
+<li>A tree index on x helps MIN/MAX(x) and range on x. It does <b>not</b> help MAX(x*y), or filters that match most rows (low selectivity).</li>
+<li>Downsides: slower INSERT/UPDATE/DELETE, extra storage.</li></ul></div>
+
+<div class="card"><h3>Relational algebra</h3>
+<table class="t">
+<tr><td>σ<sub>c</sub>(R)</td><td>select rows</td></tr>
+<tr><td>π<sub>a</sub>(R)</td><td>project and <b>remove duplicates</b></td></tr>
+<tr><td>ρ<sub>S(a,b)</sub>(R)</td><td>rename (needed for self-joins)</td></tr>
+<tr><td>× &nbsp; ⋈ &nbsp; ⋈<sub>c</sub></td><td>product · natural (all same-name attributes!) · theta</td></tr>
+<tr><td>∪ ∩ −</td><td>need the same schema</td></tr>
+<tr><td>γ<sub>g; AGG(x)→n</sub></td><td>group / aggregate</td></tr>
+<tr><td>R ÷ S</td><td>R(A,B) ÷ S(B): the A's paired with <b>all</b> of S</td></tr>
+</table>
+<ul>
+<li><b>All X:</b> π<sub>who,X</sub>(…) ÷ π<sub>X</sub>(…). Without ÷: <code>W − π<sub>who</sub>((W × D) − R)</code>.</li>
+<li><b>≥ N different X:</b> π<sub>who,X</sub> <i>first</i> → γ<sub>who; COUNT(X)→n</sub> → σ<sub>n≥N</sub>.</li>
+<li><b>Pairs together:</b> ρ two copies, join on the shared columns, <b>t1 &lt; t2</b>.</li>
+<li><b>Max without γ:</b> All − π(σ<sub>L1.v <b>&lt;</b> L2.v</sub>(L1×L2)). Strict &lt;, never ≤.</li>
+<li><b>Only X:</b> did X − did non-X.</li>
+<li>Write named steps (T ← …). Partial marks per step.</li>
+</ul></div>
+
+<div class="card"><h3>FDs & normal forms</h3>
+<ul>
+<li><b>X⁺</b>: keep adding the RHS of any FD whose LHS ⊆ the current set.</li>
+<li><b>Keys:</b> attributes on no RHS are in <b>every</b> key. Attributes only on a RHS are in none. Grow from the core and check minimality.</li>
+<li><b>Prime</b> = in some candidate key.</li>
+<li><b>BCNF:</b> every non-trivial X→Y has X a superkey.</li>
+<li><b>3NF:</b> X is a superkey <b>or</b> Y is prime. BCNF ⊂ 3NF.</li>
+<li><b>Minimal basis:</b> (1) split the RHS (2) drop redundant FDs (3) shrink the LHS. Recheck.</li>
+<li><b>3NF synthesis:</b> minimal basis → one relation per FD → <b>add a key relation</b> if none contains a key → drop subsets.</li>
+<li><b>BCNF decomposition:</b> violating X→Y → split into (X⁺) and (X ∪ (R−X⁺)) → <b>project the FDs</b> (compute closures inside each piece) → repeat.</li>
+<li><b>Lossless</b> (2 pieces): R1∩R2 → R1 or R1∩R2 → R2.</li>
+<li><b>Preserving:</b> each FD derivable from the union of the projected FDs. Name the lost FD.</li>
+<li><b>Compare:</b> BCNF has no FD redundancy and is lossless, but may lose FDs. 3NF is lossless and preserving, but may keep redundancy.</li>
+<li>Check an FD on an instance: the same X value with different Y values means it's violated. One counter-example disproves; an instance can never prove an FD.</li>
+<li>Anomalies: update, insertion, deletion.</li>
+<li>Adding an FD never removes an implied FD.</li>
+</ul></div>
+
+<div class="card"><h3>ER</h3>
+<ul>
+<li>□ entity · ⬭ attribute (underlined = key) · ◇ relationship · △ ISA · double □/◇ = weak entity/identifying relationship.</li>
+<li>Arrow → the “one” side. Arrows both ways = one-one. Rounded arrow = exactly one.</li>
+<li><b>ER → relations:</b> entity → table. Many-many → table (both keys). Many-one → put the FK in the “many” side. Weak → owner key + partial key.</li>
+<li><b>ISA:</b> ER-style (sub = super key + own attributes) · OO-style (a table per combination with all attributes) · NULL-style (one table). Subclass key = superclass key.</li>
+<li>Constraints: disjoint vs overlapping · total vs partial. State your assumptions.</li>
+</ul>
+<table class="t">
+<tr><th>Relation looks like</th><th>Draw</th></tr>
+<tr><td>X(<u>k</u>, a, b)</td><td>entity</td></tr>
+<tr><td>C(<u>M</u>, K, X), X = B's key</td><td>C →(many-one)→ B</td></tr>
+<tr><td>S(<u>W, M</u>), both foreign keys</td><td>many-many relationship</td></tr>
+<tr><td>G(<u>H, L</u>, R), H = A's key</td><td>weak entity G, owner A</td></tr>
+<tr><td>C, D, E all keyed on M</td><td>ISA (super = the general one)</td></tr>
+<tr><td>R(<u>G</u>), key only</td><td>entity with no other attributes, or can't be mapped (explain)</td></tr>
+</table></div>
+
+<div class="card"><h3>XML · DTD · JSON</h3>
+<pre>&lt;!DOCTYPE Hotels [
+&lt;!ELEMENT Hotels (Hotel*)&gt;
+&lt;!ELEMENT Hotel (Hname, Address, Room+)&gt;
+&lt;!ELEMENT Address (UnitNo, StreetName, Zipcode, Country)&gt;
+&lt;!ELEMENT Room (RoomNo, Type, Price)&gt;
+&lt;!ATTLIST Price currency CDATA #FIXED "SGD"&gt;
+&lt;!ELEMENT Hname (#PCDATA)&gt;  ... one per leaf
+]&gt;
+&lt;!ATTLIST Post pid ID #REQUIRED author IDREF #REQUIRED&gt;</pre>
+<ul><li>none = exactly 1 · <code>?</code> 0–1 · <code>*</code> 0+ · <code>+</code> 1+ · <code>|</code> choice.</li>
+<li>Attribute defaults: #REQUIRED · #IMPLIED · #FIXED "v" · "default". Attribute type CDATA, never #PCDATA.</li>
+<li>ID values: unique, start with a letter or _, no spaces.</li>
+<li>XML has exactly <b>one root</b>, case-sensitive tags, every tag closed, attribute values quoted.</li>
+<li>JSON → XML: object → element, array → repeated elements, wrapped in a root.</li>
+<li>Structured (fixed schema, tables) · semi-structured (self-describing tags: XML, JSON) · unstructured (text, images). Semi-structured fits variable or nested data, like chat sessions.</li></ul></div>
+
+</div>
+</main>
+</body>
+</html>

@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SC2207 — 4-hour sprint</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <a class="home" href="./">← Home</a>
+  <h1>4-hour exam-ready sprint</h1>
+  <div class="card">
+    <b>How it works:</b> write each answer on your iPad <b>before</b> revealing. Keep to the ⏱ time, which matches exam pace (about 1.2 min per mark). Mark yourself honestly against the marking points. At the end, tap <b>Check</b> → <b>Send results to Claude</b>.<br><br>
+    <b>Schedule</b><br>
+    0:00–0:15 · Skim the <a href="cheat.html">cheat sheet</a> (SQL + Triggers boxes)<br>
+    0:15–1:15 · <b>Block A</b>: SQL queries (Q1–Q7)<br>
+    1:15–1:25 · break<br>
+    1:25–2:15 · <b>Block B</b>: DDL, triggers, views (Q8–Q12)<br>
+    2:15–2:25 · break<br>
+    2:25–3:15 · <b>Block C</b>: relational algebra + normalisation (Q13–Q16)<br>
+    3:15–3:45 · <b>Block D</b>: ER reverse engineering + DTD (Q17–Q18)<br>
+    3:45–4:00 · Send results. Reread the cheat sheet boxes for anything you marked “Missed”.
+  </div>
+  <div id="result"></div>
+  <div id="quiz"></div>
+</main>
+<div class="bar">
+  <button class="btn sec" id="reset">Reset</button>
+  <button class="btn" id="check">Check / finish</button>
+</div>
+<script>
+const SHOP = `<b>Shop schema</b> (2024-25 S2)<br>PRODUCT(<u>productid</u>, pname, price, discount, quantity, category, producerid)<br>CUSTOMER(<u>customerid</u>, customername, address, email, phone)<br>ORDER(<u>orderid</u>, customerid, date, grandtotal)<br>ORDER_ITEM(<u>orderid, productid</u>, quantity, price) &nbsp;<i>(amount paid = price × quantity)</i><br>PRODUCER(<u>producerid</u>, name, address, country)`;
+const TRAVEL = `<b>Travel schema</b> (2025-26 S1)<br>USER(<u>email</u>, name, signup_date)<br>DESTINATION(<u>DID</u>, dname, country, description)<br>PACKAGE(<u>PID</u>, pname, price, duration, DID)<br>BOOKING(<u>PID, email, booking_date</u>, num_guests, status)<br>IDs are 4-digit ints. status ∈ {pending, confirmed, cancelled}, default pending.`;
+const CCA = `<b>CCA schema</b> (2023-24 S1)<br>STUDENT(<u>sID</u>, name, gender, age)<br>CLUB(<u>cID</u>, name, yearFounded)<br>MEMBERSHIP(<u>cID, sID</u>, position, yearJoin)<br>ACTIVITY(<u>date, cID</u>, name)`;
+
+window.QUIZ = { round: "SPRINT", questions: [
+
+/* ---------------- BLOCK A: SQL ---------------- */
+{ type:"open", sec:"Block A — SQL queries (60 min)", topic:"SQL write", ctx: SHOP,
+  q:`⏱ 6 min · (5 marks) Names and emails of customers who bought products in category 'coffee' on 3 Jan 2025 that are produced in Singapore.`,
+  model:`<pre>SELECT DISTINCT C.customername, C.email
+FROM CUSTOMER C
+JOIN [ORDER] O     ON O.customerid = C.customerid
+JOIN ORDER_ITEM OI ON OI.orderid   = O.orderid
+JOIN PRODUCT P     ON P.productid  = OI.productid
+JOIN PRODUCER PR   ON PR.producerid = P.producerid
+WHERE P.category = 'coffee'
+  AND O.date = '2025-01-03'
+  AND PR.country = 'Singapore';</pre>
+<b>Marking points:</b> all 5 tables joined on the right keys ✔ · 3 filters ✔ · DISTINCT (one customer can buy several coffees) ✔ · <code>[ORDER]</code> in brackets, since it's a reserved word (examiners usually tolerate it either way).` },
+
+{ type:"open", sec:"Block A — SQL queries (60 min)", topic:"SQL write", ctx: SHOP,
+  q:`⏱ 9 min · (7 marks) Names and phones of customers who bought <b>all</b> 'car' category products <b>in a single order</b>, and <b>never</b> bought any product produced in Singapore.`,
+  model:`<pre>SELECT C.customername, C.phone
+FROM CUSTOMER C
+WHERE EXISTS (                       -- some single order...
+    SELECT * FROM [ORDER] O
+    WHERE O.customerid = C.customerid
+      AND NOT EXISTS (               -- ...missing no car product
+          SELECT * FROM PRODUCT P
+          WHERE P.category = 'car'
+            AND NOT EXISTS (
+                SELECT * FROM ORDER_ITEM OI
+                WHERE OI.orderid = O.orderid
+                  AND OI.productid = P.productid)))
+  AND NOT EXISTS (                   -- never bought Singapore-made
+    SELECT * FROM [ORDER] O2
+    JOIN ORDER_ITEM OI2 ON OI2.orderid = O2.orderid
+    JOIN PRODUCT P2     ON P2.productid = OI2.productid
+    JOIN PRODUCER PR    ON PR.producerid = P2.producerid
+    WHERE O2.customerid = C.customerid
+      AND PR.country = 'Singapore');</pre>
+<b>Marking points:</b> division is done <b>per order</b> (the EXISTS order wraps the double NOT EXISTS) ✔ · the correlation <code>OI.orderid = O.orderid</code> ✔ · the exclusion uses NOT EXISTS ✔.<br>
+Counting alternative: <code>GROUP BY O.orderid HAVING COUNT(DISTINCT productid) = (SELECT COUNT(*) FROM PRODUCT WHERE category='car')</code>, counting only car items.` },
+
+{ type:"open", sec:"Block A — SQL queries (60 min)", topic:"SQL write", ctx: SHOP,
+  q:`⏱ 7 min · (6 marks) Names of customers who paid <b>less</b> than the PRODUCT table price for some product, plus each such customer's <b>total saving</b> across all their orders.`,
+  model:`<pre>SELECT C.customername,
+       SUM((P.price - OI.price) * OI.quantity) AS total_saving
+FROM CUSTOMER C
+JOIN [ORDER] O     ON O.customerid = C.customerid
+JOIN ORDER_ITEM OI ON OI.orderid   = O.orderid
+JOIN PRODUCT P     ON P.productid  = OI.productid
+WHERE OI.price &lt; P.price
+GROUP BY C.customerid, C.customername;</pre>
+<b>Marking points:</b> compare ORDER_ITEM.price with PRODUCT.price ✔ · saving × <b>quantity</b> ✔ · GROUP BY includes the id (names can repeat) ✔.` },
+
+{ type:"open", sec:"Block A — SQL queries (60 min)", topic:"SQL write", ctx: SHOP,
+  q:`⏱ 9 min · (7 marks) For <b>each category</b>, the names and prices of the product(s) with the largest total sales (sum of price × quantity over all orders). Return all products on a tie.`,
+  model:`<pre>SELECT P.category, P.pname, P.price
+FROM PRODUCT P
+JOIN ORDER_ITEM OI ON OI.productid = P.productid
+GROUP BY P.productid, P.category, P.pname, P.price
+HAVING SUM(OI.price * OI.quantity) &gt;= ALL (
+    SELECT SUM(OI2.price * OI2.quantity)
+    FROM PRODUCT P2
+    JOIN ORDER_ITEM OI2 ON OI2.productid = P2.productid
+    WHERE P2.category = P.category      -- correlated: same category
+    GROUP BY P2.productid);</pre>
+Alternative: a CTE or view <code>Sales(productid, category, total)</code>, then <code>WHERE total = (SELECT MAX(total) FROM Sales S2 WHERE S2.category = S.category)</code>.<br>
+<b>Marking points:</b> sales use ORDER_ITEM.price (what was paid) ✔ · <b>per-category</b> correlation ✔ · ties via &gt;= ALL / = MAX ✔ · no TOP 1 ✔.` },
+
+{ type:"open", sec:"Block A — SQL queries (60 min)", topic:"SQL write", ctx: CCA,
+  q:`⏱ 6 min · (5 marks) <b>Without using any JOIN</b>: names of students aged 21 or over who joined <b>more than 4</b> clubs since 2020.`,
+  model:`<pre>SELECT name
+FROM STUDENT
+WHERE age &gt;= 21
+  AND sID IN (SELECT sID
+              FROM MEMBERSHIP
+              WHERE yearJoin &gt;= 2020
+              GROUP BY sID
+              HAVING COUNT(*) &gt; 4);</pre>
+<b>Marking points:</b> no JOIN keyword, and no comma-join either ✔ · HAVING COUNT &gt; 4 (not ≥) ✔ · “since 2020” means ≥ 2020 ✔. COUNT(*) is fine because (cID, sID) is the key, so there are no duplicate club rows.` },
+
+{ type:"open", sec:"Block A — SQL queries (60 min)", topic:"SQL write", ctx: CCA,
+  q:`⏱ 7 min · (6 marks) Each student's name and the total number of activities they <b>could</b> join. A student can only join activities run by clubs they're a member of. Show students with 0 too.`,
+  model:`<pre>SELECT S.name, COUNT(A.date) AS total_activities
+FROM STUDENT S
+LEFT JOIN MEMBERSHIP M ON M.sID = S.sID
+LEFT JOIN ACTIVITY A   ON A.cID = M.cID
+GROUP BY S.sID, S.name;</pre>
+<b>Marking points:</b> the path goes through MEMBERSHIP (the eligibility rule) ✔ · LEFT JOINs + <b>COUNT(A.date)</b> so 0 shows (COUNT(*) would give 1!) ✔ · GROUP BY sID ✔. ACTIVITY's key is (date, cID), so each row is one distinct activity.` },
+
+{ type:"open", sec:"Block A — SQL queries (60 min)", topic:"SQL write", ctx: TRAVEL,
+  q:`⏱ 6 min · (6 marks) (a) Names of users with at least one booking, using EXISTS, with no duplicates. (b) Total sales per country per month for confirmed bookings, using FORMAT(date,'yyyy-MM'). Sales = price × num_guests.`,
+  model:`<pre>-- (a)
+SELECT U.name
+FROM [USER] U
+WHERE EXISTS (SELECT * FROM BOOKING B WHERE B.email = U.email);
+
+-- (b)
+SELECT D.country,
+       FORMAT(B.booking_date, 'yyyy-MM') AS month,
+       SUM(P.price * B.num_guests)        AS total_sales
+FROM BOOKING B
+JOIN PACKAGE P     ON P.PID = B.PID
+JOIN DESTINATION D ON D.DID = P.DID
+WHERE B.status = 'confirmed'
+GROUP BY D.country, FORMAT(B.booking_date, 'yyyy-MM');</pre>
+<b>Marking points:</b> (a) EXISTS gives one row per user, so no duplicates (add DISTINCT only if two users can share a name and you mean unique names) ✔ · (b) GROUP BY repeats the FORMAT expression, not the alias ✔ · the status filter goes in WHERE, not HAVING ✔.` },
+
+/* ---------------- BLOCK B: DDL / triggers / views ---------------- */
+{ type:"open", sec:"Block B — DDL, triggers, views (50 min)", topic:"DDL", ctx: TRAVEL,
+  q:`⏱ 14 min · (13 marks) Write CREATE TABLE BOOKING. Then INSERT statements for: on 21 Jun 2025 Alice signs up as alice@gmail.com. A new package “Milan Tour 2025” is added: 8 days, Milan, Italy, SGD 899, “fashion capital with rich history, architecture and culture”. On 22 Jun 2025 Alice books it for 2 travellers. No payment yet.`,
+  model:`<pre>CREATE TABLE BOOKING (
+  PID          INT          NOT NULL,
+  email        VARCHAR(100) NOT NULL,
+  booking_date DATE         NOT NULL,
+  num_guests   INT          NOT NULL CHECK (num_guests &gt; 0),
+  status       VARCHAR(10)  NOT NULL DEFAULT 'pending'
+               CHECK (status IN ('pending','confirmed','cancelled')),
+  PRIMARY KEY (PID, email, booking_date),
+  FOREIGN KEY (PID)   REFERENCES PACKAGE(PID),
+  FOREIGN KEY (email) REFERENCES [USER](email)
+);
+
+INSERT INTO [USER] (email, name, signup_date)
+VALUES ('alice@gmail.com', 'Alice', '2025-06-21');
+
+INSERT INTO DESTINATION (DID, dname, country, description)
+VALUES (1001, 'Milan', 'Italy',
+        'Fashion capital with rich history, architecture and culture');
+
+INSERT INTO PACKAGE (PID, pname, price, duration, DID)
+VALUES (2001, 'Milan Tour 2025', 899, 8, 1001);
+
+INSERT INTO BOOKING (PID, email, booking_date, num_guests)
+VALUES (2001, 'alice@gmail.com', '2025-06-22', 2);  -- status defaults to 'pending'</pre>
+<b>Marking points:</b> composite PK ✔ · 2 FKs ✔ · DEFAULT + CHECK on status ✔ · sensible types (INT ids, DATE) ✔ · inserts in <b>FK order</b> USER → DESTINATION → PACKAGE → BOOKING ✔ · DID/PID values made up as 4-digit ✔ · status left out, or written as 'pending' ✔.` },
+
+{ type:"open", sec:"Block B — DDL, triggers, views (50 min)", topic:"Trigger", ctx: SHOP,
+  q:`⏱ 11 min · (9 marks) Write all the triggers needed so that ORDER.grandtotal always equals the sum of quantity × price of the order's items.`,
+  model:`<b>Option 1, recompute (safest, one trigger):</b>
+<pre>CREATE TRIGGER trg_item_total ON ORDER_ITEM
+AFTER INSERT, UPDATE, DELETE
+AS
+BEGIN
+  UPDATE O
+  SET grandtotal = ISNULL((SELECT SUM(I.quantity * I.price)
+                           FROM ORDER_ITEM I
+                           WHERE I.orderid = O.orderid), 0)
+  FROM [ORDER] O
+  WHERE O.orderid IN (SELECT orderid FROM inserted
+                      UNION
+                      SELECT orderid FROM deleted);
+END;</pre>
+<b>Option 2, deltas (three triggers):</b>
+<pre>CREATE TRIGGER trg_item_ins ON ORDER_ITEM AFTER INSERT AS
+BEGIN
+  UPDATE O SET grandtotal = O.grandtotal + X.s
+  FROM [ORDER] O JOIN (SELECT orderid, SUM(quantity*price) AS s
+                       FROM inserted GROUP BY orderid) X
+       ON O.orderid = X.orderid;
+END;
+-- AFTER DELETE: same but with "deleted" and minus
+-- AFTER UPDATE: subtract the deleted sums, then add the inserted sums</pre>
+<b>Also:</b> stop direct edits to grandtotal, e.g. an AFTER UPDATE trigger on [ORDER] that recomputes it, or <code>IF UPDATE(grandtotal)</code> → RAISERROR + ROLLBACK.<br>
+<b>Marking points:</b> covers INSERT, UPDATE <b>and</b> DELETE ✔ · set-based (multi-row safe) ✔ · uses inserted/deleted correctly ✔ · ISNULL so an order with no items gets 0 ✔ · protects grandtotal on ORDER ✔.` },
+
+{ type:"open", sec:"Block B — DDL, triggers, views (50 min)", topic:"Trigger",
+  ctx:`SIGNUP(<u>PID, TID, Cdate, SID</u>, PromoCode) · PROGRAM(<u>PID</u>, Pname, Fee)`,
+  q:`⏱ 9 min · (9 marks) Write trigger <code>LowerProgramFee</code>: reduce a program's fee by 10% when its total signups reach 1,000.`,
+  model:`<pre>CREATE TRIGGER LowerProgramFee ON SIGNUP
+AFTER INSERT
+AS
+BEGIN
+  UPDATE PROGRAM
+  SET Fee = Fee * 0.9
+  WHERE PID IN (
+    SELECT S.PID
+    FROM SIGNUP S
+    WHERE S.PID IN (SELECT PID FROM inserted)
+    GROUP BY S.PID
+    HAVING COUNT(*) &gt;= 1000                                   -- now at/above
+       AND COUNT(*) - (SELECT COUNT(*) FROM inserted I
+                       WHERE I.PID = S.PID) &lt; 1000            -- was below
+  );
+END;</pre>
+<b>Marking points:</b> ON SIGNUP AFTER INSERT ✔ · counts total signups per PID ✔ · multi-row safe ✔ · applies the discount <b>once</b>, when crossing 1,000, not on every later signup ✔ (state this assumption) · Fee × 0.9 ✔.<br>
+A simpler <code>HAVING COUNT(*) = 1000</code> gets most marks for single-row inserts. Mention the limitation.` },
+
+{ type:"open", sec:"Block B — DDL, triggers, views (50 min)", topic:"Trigger", ctx: CCA,
+  q:`⏱ 7 min · (6 marks) Trigger <code>newStudent</code>: when a STUDENT is inserted, add a MEMBERSHIP to 'SU001' with position 'member'. Female students also join 'YWS012'. yearJoin = current year.`,
+  model:`<pre>CREATE TRIGGER newStudent ON STUDENT
+AFTER INSERT
+AS
+BEGIN
+  INSERT INTO MEMBERSHIP (cID, sID, position, yearJoin)
+  SELECT 'SU001', sID, 'member', YEAR(GETDATE())
+  FROM inserted;
+
+  INSERT INTO MEMBERSHIP (cID, sID, position, yearJoin)
+  SELECT 'YWS012', sID, 'member', YEAR(GETDATE())
+  FROM inserted
+  WHERE gender = 'female';
+END;</pre>
+<b>Marking points:</b> INSERT … SELECT from inserted (multi-row safe, no VALUES with a variable) ✔ · gender filter ✔ · YEAR(GETDATE()) ✔.` },
+
+{ type:"open", sec:"Block B — DDL, triggers, views (50 min)", topic:"View", ctx: SHOP,
+  q:`⏱ 8 min · (7 marks) CREATE VIEW ProductSoldTogether(Productid_A, pname_A, Productid_B, pname_B, numberofdistinctcustomers) listing pairs of <b>different</b> products bought in the same order, with the number of distinct customers who bought that pair.`,
+  model:`<pre>CREATE VIEW ProductSoldTogether
+  (Productid_A, pname_A, Productid_B, pname_B, numberofdistinctcustomers) AS
+SELECT A.productid, PA.pname, B.productid, PB.pname,
+       COUNT(DISTINCT O.customerid)
+FROM ORDER_ITEM A
+JOIN ORDER_ITEM B ON B.orderid = A.orderid
+                 AND A.productid &lt; B.productid      -- different, no (B,A) dup
+JOIN [ORDER] O    ON O.orderid = A.orderid
+JOIN PRODUCT PA   ON PA.productid = A.productid
+JOIN PRODUCT PB   ON PB.productid = B.productid
+GROUP BY A.productid, PA.pname, B.productid, PB.pname;</pre>
+<b>Marking points:</b> self-join of ORDER_ITEM on orderid ✔ · &lt; (or &lt;&gt;, if you want both orders of each pair; say which) ✔ · COUNT(<b>DISTINCT</b> customerid) ✔ · names via PRODUCT twice ✔.` },
+
+/* ---------------- BLOCK C: RA + normalisation ---------------- */
+{ type:"open", sec:"Block C — Relational algebra & normalisation (50 min)", topic:"RA",
+  ctx:`ENROLLMENT(<u>sID, type, date, startTime, iID</u>) · LESSON(<u>type</u>, duration, fee)`,
+  q:`⏱ 12 min · (a) Students who took lessons with the <b>same instructor</b> for ≥ 3 <b>different</b> types. (b) Instructors who have taught <b>all</b> lesson types. (c) Lesson type(s) with the highest fee per hour.`,
+  model:`<b>(a)</b><br>T ← π<sub>sID, iID, type</sub>(ENROLLMENT)<br>C ← γ<sub>sID, iID; COUNT(type)→n</sub>(T)<br>Ans ← π<sub>sID</sub>(σ<sub>n≥3</sub>(C))<br><br>
+<b>(b)</b> Ans ← π<sub>iID, type</sub>(ENROLLMENT) ÷ π<sub>type</sub>(LESSON)<br><br>
+<b>(c)</b><br>R ← π<sub>type, fee/duration→rate</sub>(LESSON)<br>M ← γ<sub>MAX(rate)→m</sub>(R)<br>Ans ← π<sub>type</sub>(σ<sub>rate=m</sub>(R × M))<br>(or All − π<sub>R1.type</sub>(σ<sub>R1.rate &lt; R2.rate</sub>(R1 × R2)))<br><br>
+<b>Marking points:</b> project before counting ✔ · group by sID <b>and</b> iID ✔ · dividend has exactly (iID, type) ✔ · extended projection for rate ✔ · ties kept ✔.` },
+
+{ type:"open", sec:"Block C — Relational algebra & normalisation (50 min)", topic:"RA",
+  ctx:`TALENT(<u>tID</u>, name, gender, agentContact, specialty) · SCHEDULE(<u>sID</u>, pID, tID, cID, sceneNumber, date, startTime, endTime)`,
+  q:`⏱ 12 min · (13 marks) (a) Cinematographers present in <b>all</b> shooting schedules of production 0101. (b) <b>Pairs of actors</b> present at the same studio (cID) for ≥ 3 different productions.`,
+  model:`<b>(a)</b><br>
+Cin ← π<sub>tID</sub>(σ<sub>specialty='cinematographer'</sub>(TALENT))<br>
+D ← π<sub>sID</sub>(σ<sub>pID=0101</sub>(SCHEDULE)) &nbsp;<i>(divisor)</i><br>
+W ← π<sub>tID, sID</sub>(SCHEDULE ⋈ Cin) &nbsp;<i>(dividend)</i><br>
+Ans ← W ÷ D<br>
+(Add σ on date for “last two months”. Note each schedule row has one tID; state that assumption.)<br><br>
+<b>(b)</b><br>
+Act ← π<sub>tID</sub>(σ<sub>specialty='actor'</sub>(TALENT))<br>
+X ← π<sub>tID, cID, pID</sub>(SCHEDULE ⋈ Act)<br>
+X1 ← ρ<sub>X1(t1, c1, p1)</sub>(X), X2 ← ρ<sub>X2(t2, c2, p2)</sub>(X)<br>
+P ← π<sub>t1, t2, p1</sub>(σ<sub>c1=c2 ∧ p1=p2 ∧ t1&lt;t2</sub>(X1 × X2))<br>
+C ← γ<sub>t1, t2; COUNT(p1)→n</sub>(P)<br>
+Ans ← π<sub>t1, t2</sub>(σ<sub>n≥3</sub>(C))<br><br>
+<b>Marking points:</b> specialty filters ✔ · correct dividend/divisor ✔ · renaming ✔ · t1 &lt; t2 ✔ · project to (t1, t2, p) before counting ✔.` },
+
+{ type:"open", sec:"Block C — Relational algebra & normalisation (50 min)", topic:"Normalisation",
+  ctx:`R(A,B,C,D,E), F = {A→E, BC→A, DE→B} (2024-25 S1 Q2b)`,
+  q:`⏱ 14 min · (15 marks) Find all candidate keys. Normalise into 3NF and into BCNF. Compare the two results.`,
+  model:`<b>Keys:</b> C and D are on no RHS, so they're in every key. CD⁺ = CD ✗.<br>ACD⁺ = ACD+E+B ✔ · BCD⁺ = BCD+A+E ✔ · CDE⁺ = CDE+B+A ✔. <b>Keys: ACD, BCD, CDE.</b><br><br>
+<b>3NF:</b> every attribute is prime, so every FD's RHS is prime and <b>R is already in 3NF</b>. No decomposition is needed. (If you run synthesis anyway: (A,E), (A,B,C), (B,D,E) + key (A,C,D).)<br><br>
+<b>BCNF:</b> no LHS is a superkey.<br>
+• A→E: A⁺ = AE → R1(A,E) ✔ BCNF, and R2(A,B,C,D).<br>
+• Project onto ABCD: BC→A, and AD→B (because AD⁺ = A D E B). Keys ACD, BCD. BC→A violates.<br>
+• BC⁺ = ABC → R3(A,B,C) (key BC, BCNF ✔), R4(B,C,D) (no non-trivial FDs, BCNF ✔).<br>
+<b>Result:</b> (A,E), (A,B,C), (B,C,D).<br><br>
+<b>Compare:</b> BCNF <b>loses DE→B</b> (D, E and B are never together, and it can't be derived from A→E, BC→A). 3NF (R itself) keeps all FDs but has redundancy, e.g. A→E repeated across rows. Both are lossless.<br>
+<b>Marking points:</b> closures shown ✔ · all 3 keys ✔ · prime-attribute argument for 3NF ✔ · projected FD AD→B noticed ✔ · lost FD named ✔.` },
+
+{ type:"open", sec:"Block C — Relational algebra & normalisation (50 min)", topic:"Normalisation",
+  ctx:`S(P,Q,R,S,T,U), F = {P→QR, Q→S, RS→T, ST→U, U→P} (2025-26 S1 Q2b)`,
+  q:`⏱ 10 min · (15 marks) (i) Prove or disprove QR→U. (ii) If T→Q is added, does QR→U still hold? (iii) Which attributes must be part of <b>every</b> candidate key?`,
+  model:`<b>(i)</b> QR⁺: start QR → Q→S gives QRS → RS→T gives QRST → ST→U gives QRSTU → U→P gives PQRSTU. U ∈ QR⁺, so <b>QR→U holds</b>.<br><br>
+<b>(ii)</b> <b>Yes.</b> Adding an FD only adds implications and never removes any. The derivation in (i) still works unchanged.<br><br>
+<b>(iii)</b> An attribute is in every key only if it can't be derived from the others. Every attribute appears on some RHS, and in fact P, U, QR and ST are each keys (P⁺ = all; U → P → all). There are keys with no attribute in common, e.g. {P} and {U}, so <b>no attribute is in every key</b>, giving ∅.<br>
+<b>Marking points:</b> step-by-step closure with the FD used at each step ✔ · monotonicity argument ✔ · show two disjoint keys ✔.` },
+
+/* ---------------- BLOCK D: ER + DTD ---------------- */
+{ type:"open", sec:"Block D — ER & XML (30 min)", topic:"ER",
+  ctx:`A(<u>H</u>, Z) · B(<u>X</u>, H) · C(<u>M</u>, K, X) · D(<u>M</u>, N, H) · E(<u>M</u>, P) · F(<u>W</u>, Y) · G(<u>H, L</u>, R) · S(<u>W, M</u>) · U(<u>H, M</u>) &nbsp;(2023-24 S2 Q2b)`,
+  q:`⏱ 15 min · (12 marks) Draw the ER diagram these relations came from: entity sets, attributes, relationships with arrows, ISA, weak entities. State your assumptions.`,
+  model:`<b>One reasonable reading (state assumptions like these):</b><br>
+• <b>A</b>: entity, key H, attribute Z.<br>
+• <b>B</b>: entity, key X. H in B is a non-key FK → <b>many-one B → A</b>.<br>
+• <b>C, D, E</b> share key M → <b>ISA</b>: E(M, P) is the superclass, C (attr K) and D (attr N) are subclasses (ER-style).<br>
+&nbsp;&nbsp;– X in C → many-one <b>C → B</b>. H in D → many-one <b>D → A</b>.<br>
+• <b>F</b>: entity, key W, attribute Y.<br>
+• <b>G(H, L, R)</b>: the key includes A's key H → <b>weak entity G</b>, owner A, partial key L, attribute R (double rectangle, double diamond).<br>
+• <b>S(W, M)</b>: <b>many-many</b> between F and E.<br>
+• <b>U(H, M)</b>: <b>many-many</b> between A and E.<br><br>
+<b>Marking points:</b> ISA spotted from the shared key ✔ · weak entity from the composite key containing a FK ✔ · non-key FKs drawn as many-one relationships with arrows, not as attributes ✔ · pure-key tables as many-many ✔ · assumptions written ✔.` },
+
+{ type:"open", sec:"Block D — ER & XML (30 min)", topic:"XML",
+  ctx:`STUDENT(<u>SID</u>, Sname, Gender) · SIGNUP(<u>PID, TID, Cdate, SID</u>, PromoCode) · TRAINER(<u>TID</u>, Tname, Toffice) · CLASS(<u>PID, TID, Cdate</u>, Ctime, Venue) · PROGRAM(<u>PID</u>, Pname, Fee)`,
+  q:`⏱ 10 min · (8 marks) Write a DTD for an XML view, <b>grouped by class</b>. Each class is for exactly one program and one trainer, and has a date, time and venue. Most classes have many students, but some have none. Reduce redundancy. No ID/IDREF needed.`,
+  model:`<pre>&lt;!DOCTYPE Classes [
+&lt;!ELEMENT Classes (Class*)&gt;
+&lt;!ELEMENT Class   (Program, Trainer, Cdate, Ctime, Venue, Student*)&gt;
+&lt;!ELEMENT Program (PID, Pname, Fee)&gt;
+&lt;!ELEMENT Trainer (TID, Tname, Toffice)&gt;
+&lt;!ELEMENT Student (SID, Sname, Gender, PromoCode?)&gt;
+&lt;!ELEMENT PID (#PCDATA)&gt;      &lt;!ELEMENT Pname (#PCDATA)&gt;
+&lt;!ELEMENT Fee (#PCDATA)&gt;      &lt;!ELEMENT TID (#PCDATA)&gt;
+&lt;!ELEMENT Tname (#PCDATA)&gt;    &lt;!ELEMENT Toffice (#PCDATA)&gt;
+&lt;!ELEMENT Cdate (#PCDATA)&gt;    &lt;!ELEMENT Ctime (#PCDATA)&gt;
+&lt;!ELEMENT Venue (#PCDATA)&gt;    &lt;!ELEMENT SID (#PCDATA)&gt;
+&lt;!ELEMENT Sname (#PCDATA)&gt;    &lt;!ELEMENT Gender (#PCDATA)&gt;
+&lt;!ELEMENT PromoCode (#PCDATA)&gt;
+]&gt;</pre>
+<b>Marking points:</b> a single root ✔ · Class is the grouping level ✔ · exactly-one Program and Trainer (no symbol) ✔ · <b>Student*</b> (zero or more) ✔ · PromoCode? is optional and sits in Student because it's per signup ✔ · every leaf declared #PCDATA ✔. Attributes are also fine for simple values, e.g. <code>&lt;!ATTLIST Program PID CDATA #REQUIRED&gt;</code>.` }
+]};
+</script>
+<script src="engine.js"></script>
+</body>
+</html>
