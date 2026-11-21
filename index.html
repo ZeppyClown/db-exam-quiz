@@ -195,12 +195,49 @@ function renderResult() {
     <div class="sub">${lucky ? `${lucky} of those were guesses, so count them as gaps too.` : "No lucky guesses counted."}</div>
     <table><tr><th>Topic</th><th>Score</th></tr>${Object.entries(by).map(([t, [s, n]]) =>
       `<tr><td>${t}</td><td>${s}/${n} ${s === n ? "✅" : s === 0 ? "❌" : "⚠️"}</td></tr>`).join("")}</table>
-    <div class="sub" style="margin-top:10px">Send this score to Claude for a Round 2 aimed at your weak topics.</div></div>`;
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
+      <a class="btn" style="text-align:center;text-decoration:none" target="_blank" href="${issueUrl()}">📤 Send results to Claude</a>
+      <button class="btn sec" id="copy">Copy results (paste into chat instead)</button>
+    </div>
+    <div class="sub" style="margin-top:8px">“Send” opens a GitHub issue with your answers filled in. Just tap <b>Submit</b> and Claude picks it up automatically.</div></div>`;
+  document.getElementById("copy").onclick = async (ev) => {
+    try { await navigator.clipboard.writeText(report()); ev.target.textContent = "Copied ✔"; }
+    catch { prompt("Copy this:", report()); }
+  };
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+const ROUND = "R1";
+const REPO = "ZeppyClown/db-exam-quiz";
+const strip = s => s.replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
+
+function report() {
+  let total = 0;
+  const by = {};
+  const lines = Q.map((x, i) => {
+    const c = state.ans[i], ok = c === x.a, g = !!state.guess[i];
+    by[x.topic] = by[x.topic] || [0, 0]; by[x.topic][1]++;
+    if (ok) { total++; if (!g) by[x.topic][0]++; }
+    return `Q${i+1} [${x.topic}] picked ${c === undefined ? "-" : L[c]}${g ? "?" : ""} | correct ${L[x.a]} | ${ok ? (g ? "LUCKY" : "OK") : "WRONG"}${c !== undefined && !ok ? ` | chose: "${strip(x.o[c])}"` : ""}`;
+  });
+  const mins = state.start ? Math.round((Date.now() - state.start) / 60000) : "?";
+  return `<!-- quiz-result -->
+round: ${ROUND}
+score: ${total}/${Q.length}
+time_minutes: ${mins}
+topic_confident_correct: ${Object.entries(by).map(([t, [s, n]]) => `${t} ${s}/${n}`).join("; ")}
+
+${lines.join("\n")}`;
+}
+
+function issueUrl() {
+  const p = new URLSearchParams({ title: `Quiz result ${ROUND} — ${new Date().toLocaleString()}`, body: report(), labels: "quiz-result" });
+  return `https://github.com/${REPO}/issues/new?${p}`;
+}
+
+if (!state.start) { state.start = Date.now(); save(); }
 document.getElementById("check").onclick = () => { state.checked = true; save(); render(); };
-document.getElementById("reset").onclick = () => { if (confirm("Clear all answers?")) { state = { ans:{}, guess:{}, checked:false }; save(); render(); } };
+document.getElementById("reset").onclick = () => { if (confirm("Clear all answers?")) { state = { ans:{}, guess:{}, checked:false, start: Date.now() }; save(); render(); } };
 render();
 </script>
 </body>
