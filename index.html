@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SC2207 Diagnostic Quiz — Round 1</title>
+<style>
+  :root { --bg:#f7f7f8; --card:#fff; --text:#1d1d1f; --muted:#6e6e73; --line:#e3e3e8;
+          --accent:#2f6fde; --ok:#1f8f4e; --okbg:#e7f6ed; --bad:#c9372c; --badbg:#fdecea; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111113; --card:#1c1c1f; --text:#f2f2f4; --muted:#9a9aa1; --line:#2c2c31;
+            --accent:#6b9bff; --ok:#4cc27e; --okbg:#16301f; --bad:#ff6b5e; --badbg:#3a1a17; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width:720px; margin:0 auto; padding:16px 14px 80px; }
+  h1 { font-size:1.4rem; margin:8px 0 4px; }
+  .sub { color:var(--muted); font-size:.92rem; margin-bottom:16px; }
+  h2 { font-size:.8rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:28px 4px 8px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
+  .q { font-weight:600; margin-bottom:10px; }
+  .ctx { background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:.92rem; }
+  pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.85rem; }
+  pre { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px; overflow-x:auto; margin:8px 0; white-space:pre; }
+  .opts { display:flex; flex-direction:column; gap:8px; }
+  .opt { text-align:left; width:100%; padding:12px 14px; border-radius:10px; border:1.5px solid var(--line);
+         background:var(--card); color:var(--text); font:inherit; cursor:pointer; }
+  .opt b { margin-right:6px; }
+  .opt.sel { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
+  .opt.correct { border-color:var(--ok); background:var(--okbg); }
+  .opt.wrong { border-color:var(--bad); background:var(--badbg); }
+  .opt:disabled { cursor:default; }
+  .guess { display:flex; align-items:center; gap:8px; margin-top:10px; color:var(--muted); font-size:.9rem; }
+  .exp { display:none; margin-top:12px; padding:12px; border-radius:10px; border-left:4px solid var(--accent); background:var(--bg); font-size:.93rem; }
+  .exp.show { display:block; }
+  .tag { display:inline-block; font-size:.75rem; padding:2px 8px; border-radius:99px; margin-bottom:6px; font-weight:600; }
+  .tag.ok { background:var(--okbg); color:var(--ok); } .tag.bad { background:var(--badbg); color:var(--bad); }
+  .bar { position:fixed; left:0; right:0; bottom:0; background:var(--card); border-top:1px solid var(--line);
+         padding:10px 14px calc(10px + env(safe-area-inset-bottom)); display:flex; gap:10px; justify-content:center; }
+  .btn { padding:12px 20px; border-radius:10px; border:0; background:var(--accent); color:#fff; font:inherit; font-weight:600; }
+  .btn.sec { background:transparent; color:var(--accent); border:1.5px solid var(--accent); }
+  #result table { width:100%; border-collapse:collapse; font-size:.93rem; }
+  #result td, #result th { padding:6px 4px; border-bottom:1px solid var(--line); text-align:left; }
+  #result .score { font-size:2rem; font-weight:700; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SC2207 Diagnostic — Round 1</h1>
+  <div class="sub">13 questions built around the traps examiners keep using in past papers. Tap an answer, and tick “guessed” if you weren’t sure. Hit <b>Check</b> at the bottom when you’re done. Your answers are saved on this device.</div>
+  <div id="result"></div>
+  <div id="quiz"></div>
+</main>
+<div class="bar">
+  <button class="btn sec" id="reset">Reset</button>
+  <button class="btn" id="check">Check answers</button>
+</div>
+
+<script>
+const Q = [
+{ sec:"SQL", topic:"SQL",
+  ctx:`Emp(eid, dept) = (1,A), (2,A), (3,B), (4,C)<br>Task(tid, eid) = (t1,1), (t2,1), (t3,2), (t4,3), (t5,3)`,
+  q:`What is the output?<pre>SELECT E.dept, COUNT(*)
+FROM Emp E, Task T
+WHERE E.eid = T.eid
+GROUP BY E.dept;</pre>`,
+  o:["A→3, B→2, C→0","A→3, B→2","A→2, B→1","A→3, B→2, C→1"], a:1,
+  e:`Dept A: eid 1 has t1 and t2, eid 2 has t3, so 3. Dept B: eid 3 has t4 and t5, so 2. Employee 4 (dept C) has no tasks, so the <b>inner join drops it completely</b>. You never get a C→0 row. You'd need a LEFT JOIN plus COUNT(T.tid) for that. Past papers put a “count 0” row in the options on purpose.` },
+
+{ sec:"SQL", topic:"SQL",
+  ctx:`Orders(cid, category)`,
+  q:`Which queries return customers who ordered <b>both</b> coffee and tea?<br><br>
+(i) <code>WHERE category='coffee' AND category='tea'</code><br>
+(ii) <code>WHERE cid IN (…coffee…) AND cid IN (…tea…)</code><br>
+(iii) <code>WHERE cid IN (…coffee…) OR cid IN (…tea…)</code><br>
+(iv) <code>WHERE category IN ('coffee','tea') GROUP BY cid HAVING COUNT(DISTINCT category)=2</code>`,
+  o:["(ii) only","(i) and (ii)","(ii) and (iv)","(ii), (iii) and (iv)"], a:2,
+  e:`(i) checks one row at a time, and a single row can't have two categories, so the result is <b>always empty</b>. (iii) means “either”, not “both”. (ii) works. So does (iv): after filtering to the two categories, needing 2 distinct values means the customer has both. Note it must be COUNT(<b>DISTINCT</b>). A plain COUNT(*)=2 would wrongly accept someone who ordered coffee twice.` },
+
+{ sec:"SQL", topic:"SQL",
+  ctx:`TxnLog contains at least one row where <code>sid IS NULL</code>.`,
+  q:`<pre>SELECT name FROM Student
+WHERE sid NOT IN (SELECT sid FROM TxnLog);</pre>`,
+  o:["Students with no transactions","Empty result","An error","All students"], a:1,
+  e:`<code>x NOT IN (1, 2, NULL)</code> means <code>x&lt;&gt;1 AND x&lt;&gt;2 AND x&lt;&gt;NULL</code>. The last comparison is UNKNOWN, so no row can ever be TRUE. The result is <b>empty</b>. <code>NOT EXISTS</code> doesn't have this problem, so use it whenever the subquery column can be NULL.` },
+
+{ sec:"FDs & normalisation", topic:"FD / Normalisation",
+  ctx:`R(A,B,C,D,E), F = {A→B, BC→D, D→E, E→A}`,
+  q:`What are all the candidate keys?`,
+  o:["{AC}","{AC, BC}","{AC, BC, CD, CE}","{C}"], a:2,
+  e:`C never appears on a right-hand side, so <b>C must be in every key</b>, and C⁺ = C alone isn't enough. Try C plus one more attribute:<br>
+AC⁺ = A C B D E ✔<br>BC⁺ = B C D E A ✔<br>CD⁺ = C D E A B ✔<br>CE⁺ = C E A B D ✔<br>
+Each one is minimal because C alone isn't a key. Shortcut: <b>attributes on no RHS are in every key. Attributes only on a RHS are in none.</b>` },
+
+{ sec:"FDs & normalisation", topic:"FD / Normalisation",
+  ctx:`Same R(A,B,C,D,E), F = {A→B, BC→D, D→E, E→A}`,
+  q:`R is…`,
+  o:["in BCNF","in 3NF but not BCNF","not in 3NF","in BCNF but not 3NF"], a:1,
+  e:`BCNF needs every non-trivial X→Y to have X a superkey. A→B fails, since A⁺ = AB. So R is <b>not BCNF</b>.<br>3NF also allows X→Y when Y is <b>prime</b> (part of some key). The keys are AC, BC, CD, CE, so every attribute is prime and R <b>is in 3NF</b>. This “3NF but not BCNF” case comes up in exams again and again. Option D is impossible, because BCNF implies 3NF.` },
+
+{ sec:"FDs & normalisation", topic:"FD / Normalisation",
+  ctx:`R(A,B,C), F = {AB→C, C→B}. Decompose into R1(C,B) and R2(A,C).`,
+  q:`The decomposition is…`,
+  o:["lossless and dependency-preserving","lossless, but AB→C is lost","lossy, but dependency-preserving","lossy and not preserving"], a:1,
+  e:`<b>Lossless:</b> the shared attribute is C, and C→B makes C a key of R1, so the decomposition is lossless.<br><b>Preservation:</b> R1 can check C→B. AB→C needs A, B and C together, which neither relation has, so it's <b>lost</b>.<br>This is the classic BCNF trade-off. R is in 3NF already, since B is prime (keys AB, AC). The usual “compare 3NF vs BCNF” answer: BCNF removes redundancy but can lose FDs; 3NF keeps every FD and is lossless, but may keep some redundancy.` },
+
+{ sec:"FDs & normalisation", topic:"FD / Normalisation",
+  ctx:`F = {A→BC, B→C, AB→D}`,
+  q:`What is the minimal basis?`,
+  o:["{A→B, A→C, B→C, AB→D}","{A→B, B→C, A→D}","{A→B, B→C, AB→D}","{A→BC, A→D}"], a:1,
+  e:`1. <b>Split RHS:</b> A→B, A→C, B→C, AB→D<br>2. <b>Remove redundant FDs:</b> A→C follows from A→B and B→C, so drop it.<br>3. <b>Shrink LHS:</b> for AB→D, A⁺ = {A,B,C} already contains B, so AB→D becomes A→D.<br>Result: {A→B, B→C, A→D}. Steps 2 and 3 can interact, so recheck after each change.` },
+
+{ sec:"Relational algebra", topic:"Relational Algebra",
+  ctx:`Enroll(sID, type, date), Lesson(type, fee)`,
+  q:`Which expression gives students who took <b>all</b> lesson types?`,
+  o:["π<sub>sID</sub>(Enroll) ÷ π<sub>type</sub>(Lesson)","π<sub>sID,type</sub>(Enroll) ÷ π<sub>type</sub>(Lesson)","Enroll ÷ π<sub>type</sub>(Lesson)","π<sub>sID</sub>(Enroll ⋈ Lesson)"], a:1,
+  e:`For division R ÷ S, R must have exactly (answer attributes + S's attributes).<br>A: the dividend has no <i>type</i>, so it's meaningless.<br><b>C is the sneaky one:</b> leaving <i>date</i> in gives (sID, date) pairs where the student took every type <i>on that same date</i>. That's the wrong question.<br>D: just students who took at least one lesson.<br>Always <b>project away extra columns before ÷</b>.` },
+
+{ sec:"Relational algebra", topic:"Relational Algebra",
+  ctx:`Pairs of students who were in the same session for at least 3 different types. You self-join Enroll E1, E2 on type and date, with E1.sID &lt; E2.sID.`,
+  q:`Why do you need π<sub>s1,s2,type</sub> <b>before</b> γ<sub>s1,s2; COUNT(type)</sub>?`,
+  o:["To remove self-pairs","The same pair can share a type on several dates, which inflates the count","RA requires a projection before γ","To make the join lossless"], a:1,
+  e:`If Ann and Bob both did piano on 3 different dates, the join gives 3 rows (Ann, Bob, piano, date). Counting those says “3 types”, but it's really 1. Projecting onto (s1, s2, type) first removes the duplicates, because RA relations are sets. Self-pairs are removed by the <b>&lt;</b> condition, which also stops (Ann, Bob) and (Bob, Ann) from both appearing. Every recent paper has a question on “pairs … together … at least N different X”.` },
+
+{ sec:"ER · Index · Trigger · XML", topic:"ER",
+  ctx:`PhysicalProduct ISA Product(pid, name, price). The subclass has its own attribute <i>weight</i>.`,
+  q:`Using the <b>ER-style</b> translation, the PhysicalProduct relation is…`,
+  o:["(weight)","(pid, weight), key pid","(pid, name, price, weight)","(ppid, weight), with a new key ppid"], a:1,
+  e:`<b>ER-style:</b> the subclass relation holds the superclass key plus its own attributes, and the key is inherited, so (pid, weight). <b>OO-style</b> would be C, a full copy of every attribute. The <b>NULL-style</b> approach puts everything in one big Product table with NULLs. Subclasses never get a new key. A 2025 paper asked “what is the key of the subclass?”` },
+
+{ sec:"ER · Index · Trigger · XML", topic:"Index",
+  ctx:`<pre>SELECT * FROM Emp
+WHERE dept='CS' AND salary &gt; 5000
+ORDER BY salary;</pre>`,
+  q:`Which index is best?`,
+  o:["(salary)","(salary, dept)","(dept, salary)","(dept)"], a:2,
+  e:`Rule: <b>equality columns first, then the range or sort column</b>. With (dept, salary), all the CS entries sit together and are already sorted by salary. The index jumps to salary 5000 and scans forward, and the ORDER BY comes free. With (salary, dept), CS rows are spread across the salary range. Related exam fact: an index on Price helps MAX(Price) but <b>not</b> MAX(Quantity×Price).` },
+
+{ sec:"ER · Index · Trigger · XML", topic:"Trigger",
+  ctx:`You write a T-SQL trigger that keeps Order.total = SUM(qty×price) of its OrderItems.`,
+  q:`For the <code>AFTER UPDATE</code> trigger on OrderItem, which is correct?`,
+  o:["Use only the <code>inserted</code> table","Add the sums from <code>inserted</code> and subtract the sums from <code>deleted</code>, grouped by orderid","Use NEW/OLD row variables, since the trigger fires once per row","Updates can't be captured, so recompute only on insert and delete"], a:1,
+  e:`In SQL Server an UPDATE fills <code>deleted</code> with the old rows and <code>inserted</code> with the new ones. The trigger fires <b>once per statement</b>, not per row, so many rows may change at once. Group by orderid, then add the new amounts and subtract the old. (An item could even move to another order.) NEW/OLD is Oracle/Postgres syntax. Exams take marks off for missing a trigger: keeping a total correct needs INSERT, UPDATE <b>and</b> DELETE.` },
+
+{ sec:"ER · Index · Trigger · XML", topic:"XML",
+  ctx:`<code>&lt;!ATTLIST Booking id ID #REQUIRED&gt;</code>`,
+  q:`Which pair of bookings is valid?`,
+  o:[`id="1", id="2"`,`id="B1", id="B1"`,`id="B1", id="B2"`,`id="B 1", id="B 2"`], a:2,
+  e:`An ID value must be a valid XML name: it must <b>start with a letter or underscore</b> and contain <b>no spaces</b>. It must also be <b>unique</b> across the whole document. So A has a leading digit, B is a duplicate, and D has spaces. Also review: <code>+</code> means one or more, <code>*</code> zero or more, <code>?</code> optional, <code>#FIXED "SGD"</code> a constant value, and IDREF for references.` }
+];
+
+const KEY = "sc2207-r1";
+let state = JSON.parse(localStorage.getItem(KEY) || '{"ans":{},"guess":{},"checked":false}');
+const save = () => localStorage.setItem(KEY, JSON.stringify(state));
+const L = "ABCD";
+
+function render() {
+  const root = document.getElementById("quiz");
+  root.innerHTML = "";
+  let lastSec = "";
+  Q.forEach((x, i) => {
+    if (x.sec !== lastSec) { const h = document.createElement("h2"); h.textContent = x.sec; root.appendChild(h); lastSec = x.sec; }
+    const c = document.createElement("div"); c.className = "card";
+    const chosen = state.ans[i];
+    let tag = "";
+    if (state.checked) tag = chosen === x.a ? `<span class="tag ok">Correct</span>` : `<span class="tag bad">${chosen === undefined ? "Unanswered" : "Wrong"} — answer ${L[x.a]}</span>`;
+    c.innerHTML = `${tag}<div class="q">Q${i+1}.</div><div class="ctx">${x.ctx}</div><div class="q">${x.q}</div>
+      <div class="opts">${x.o.map((t, j) => {
+        let cls = "opt";
+        if (state.checked) { if (j === x.a) cls += " correct"; else if (j === chosen) cls += " wrong"; }
+        else if (j === chosen) cls += " sel";
+        return `<button class="${cls}" data-q="${i}" data-o="${j}" ${state.checked ? "disabled" : ""}><b>${L[j]}</b>${t}</button>`;
+      }).join("")}</div>
+      <label class="guess"><input type="checkbox" data-g="${i}" ${state.guess[i] ? "checked" : ""} ${state.checked ? "disabled" : ""}> guessed</label>
+      <div class="exp ${state.checked ? "show" : ""}">${x.e}</div>`;
+    root.appendChild(c);
+  });
+  root.querySelectorAll(".opt").forEach(b => b.onclick = () => { state.ans[b.dataset.q] = +b.dataset.o; save(); render(); });
+  root.querySelectorAll("[data-g]").forEach(cb => cb.onchange = () => { state.guess[cb.dataset.g] = cb.checked; save(); });
+  renderResult();
+}
+
+function renderResult() {
+  const r = document.getElementById("result");
+  if (!state.checked) { r.innerHTML = ""; return; }
+  const by = {};
+  let total = 0, lucky = 0;
+  Q.forEach((x, i) => {
+    by[x.topic] = by[x.topic] || [0, 0];
+    by[x.topic][1]++;
+    if (state.ans[i] === x.a) { by[x.topic][0]++; total++; if (state.guess[i]) lucky++; }
+  });
+  r.innerHTML = `<div class="card"><div class="score">${total} / ${Q.length}</div>
+    <div class="sub">${lucky ? `${lucky} of those were guesses, so count them as gaps too.` : "No lucky guesses counted."}</div>
+    <table><tr><th>Topic</th><th>Score</th></tr>${Object.entries(by).map(([t, [s, n]]) =>
+      `<tr><td>${t}</td><td>${s}/${n} ${s === n ? "✅" : s === 0 ? "❌" : "⚠️"}</td></tr>`).join("")}</table>
+    <div class="sub" style="margin-top:10px">Send this score to Claude for a Round 2 aimed at your weak topics.</div></div>`;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+document.getElementById("check").onclick = () => { state.checked = true; save(); render(); };
+document.getElementById("reset").onclick = () => { if (confirm("Clear all answers?")) { state = { ans:{}, guess:{}, checked:false }; save(); render(); } };
+render();
+</script>
+</body>
+</html>
