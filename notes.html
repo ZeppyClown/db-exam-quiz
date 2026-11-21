@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SC2207 — Refresher notes</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="note">
+  <a class="home" href="./">← Home</a>
+  <h1>Refresher notes</h1>
+  <div class="sub">Built around your Round 1 misses, most important first.</div>
+
+  <h2>1 · Relational algebra (25 marks every paper)</h2>
+  <div class="card">
+    <h3>The operators</h3>
+    <ul>
+      <li>σ<sub>cond</sub>(R) selects rows · π<sub>attrs</sub>(R) projects columns and <b>removes duplicates</b> (sets)</li>
+      <li>× cross product · ⋈ natural join on shared names · ⋈<sub>cond</sub> theta join</li>
+      <li>∪ ∩ − need the same schema · ρ<sub>R1(a,b)</sub> renames (needed for self-joins)</li>
+      <li>γ<sub>group attrs; AGG(x)→name</sub>(R) groups and aggregates (COUNT, SUM, MAX…)</li>
+      <li>÷ division: R(A,B) ÷ S(B) gives the A values paired with <b>every</b> B in S</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>The 4 question patterns they keep asking</h3>
+    <ul>
+      <li><b>“…ALL X”</b> → division. Divisor = the set of all X. Dividend = π<sub>answer, X</sub> with <b>nothing else</b> left in.<br>
+        Without ÷: <code>S − π<sub>A</sub>((S × Divisor) − R)</code></li>
+      <li><b>“at least N different X”</b> → π<sub>who, X</sub> first (remove repeats), then γ<sub>who; COUNT(X)→n</sub>, then σ<sub>n≥N</sub></li>
+      <li><b>“pairs who were together”</b> → ρ two copies, join on the shared session columns, keep <b>s1 &lt; s2</b> (no self-pairs, no (b,a) duplicates)</li>
+      <li><b>“most / highest”</b> → γ MAX joined back, or the “not dominated” trick: <code>All − π(σ<sub>L1.x &lt; L2.x</sub>(L1 × L2))</code>. Keeps ties.</li>
+    </ul>
+    <div class="sub">Write it as named steps (T ← …, C ← …). Examiners give partial credit per step.</div>
+  </div>
+
+  <h2>2 · SQL traps (you know SQL — these are the gotchas)</h2>
+  <div class="card">
+    <ul>
+      <li><b>Inner join drops non-matching rows.</b> No “count 0” row ever appears. LEFT JOIN + COUNT(*) gives 1. LEFT JOIN + COUNT(col) gives 0.</li>
+      <li><b>OR join conditions</b> (from = id OR to = id): one row can match an account on both sides, so count every (row, row) pair by hand.</li>
+      <li><b>WHERE runs per row:</b> <code>cat='coffee' AND cat='tea'</code> is always empty. Use two IN/EXISTS, or <code>HAVING COUNT(DISTINCT cat)=2</code>.</li>
+      <li><b>NULL:</b> <code>NOT IN</code> and <code>&gt;= ALL</code> return <b>nothing</b> if the subquery contains a NULL. NOT EXISTS and MAX are safe.</li>
+      <li><b>Ties:</b> “return all” means <code>&gt;= ALL</code> or <code>= (SELECT MAX…)</code>, never TOP 1.</li>
+      <li><b>Division in SQL:</b> double NOT EXISTS: “no X exists that this student didn't do”.</li>
+      <li><b>“No JOIN allowed”:</b> nest IN / EXISTS subqueries instead.</li>
+      <li><b>WHERE vs HAVING:</b> WHERE filters rows before grouping, and you can't use aggregates in it. HAVING filters groups after grouping.</li>
+      <li><b>NULL test:</b> <code>PromoCode IS NOT NULL</code>, never <code>&lt;&gt; NULL</code>.</li>
+      <li><b>Dialect = SQL Server:</b> <code>GETDATE()</code>, <code>YEAR(d)</code>, <code>FORMAT(d,'yyyy-MM')</code>, <code>TOP</code>.</li>
+    </ul>
+  </div>
+
+  <h2>3 · Triggers (SQL Server)</h2>
+  <div class="card">
+    <pre>CREATE TRIGGER name ON Table
+AFTER INSERT, UPDATE, DELETE   -- or INSTEAD OF
+AS
+BEGIN
+  -- inserted = new rows, deleted = old rows (tables!)
+  IF EXISTS (...)
+  BEGIN
+    RAISERROR('msg', 16, 1);
+    ROLLBACK TRANSACTION;
+  END
+END;</pre>
+    <ul>
+      <li>Fires <b>once per statement</b>. inserted/deleted can hold many rows, so write JOIN / GROUP BY code.</li>
+      <li class="warn">No NEW/OLD and no FOR EACH ROW. That's Oracle/Postgres.</li>
+      <li>Keeping a derived total correct needs <b>INSERT + DELETE + UPDATE</b> triggers. On UPDATE: add inserted, subtract deleted.</li>
+      <li>Constraint ways: key / attribute CHECK / tuple CHECK / <b>assertion</b> (multi-table, checked on every change) / trigger.</li>
+    </ul>
+  </div>
+
+  <h2>4 · FDs & normal forms</h2>
+  <div class="card">
+    <ul>
+      <li><b>Closure X⁺:</b> keep applying FDs whose LHS ⊆ current set.</li>
+      <li><b>Keys:</b> attributes on no RHS are in every key; attributes only on RHS are in no key. Then grow from that core.</li>
+      <li><b>Prime</b> = in <i>some</i> candidate key.</li>
+      <li><b>BCNF:</b> every non-trivial X→Y has X a superkey.</li>
+      <li><b>3NF:</b> X is a superkey <b>or</b> every attribute of Y is prime.</li>
+      <li class="warn">BCNF ⊂ 3NF. Every BCNF relation is 3NF, so “BCNF but not 3NF” is impossible.</li>
+      <li><b>Minimal basis:</b> split RHS → remove redundant FDs → shrink LHS (recheck).</li>
+      <li><b>3NF synthesis:</b> minimal basis → one relation per FD → add a key relation if none contains a key → drop subsets.</li>
+      <li><b>BCNF decomposition:</b> pick violating X→Y, split into (X⁺) and (X ∪ rest), <b>project the FDs</b> onto each, repeat.</li>
+      <li><b>Lossless</b> (binary): R1∩R2 → R1 or R1∩R2 → R2. <b>Preserving:</b> every FD checkable inside one piece (or derivable from the projected FDs).</li>
+      <li><b>Compare:</b> BCNF has no FD redundancy and is lossless, but may lose FDs. 3NF is lossless and preserving, but may keep redundancy.</li>
+      <li>Adding an FD can never <i>remove</i> an implied FD.</li>
+    </ul>
+  </div>
+
+  <h2>5 · ER</h2>
+  <div class="card">
+    <ul>
+      <li>Rectangle = entity set · oval = attribute (underlined = key) · diamond = relationship · triangle = ISA · double rectangle/diamond = weak.</li>
+      <li>Arrow points to the “one” side (many-one). Arrows on both sides = one-one.</li>
+      <li><b>ISA:</b> ER-style (subclass = super key + own attrs) · OO-style (a full table per combination) · NULL-style (one table). The subclass key is the <b>superclass key</b>.</li>
+      <li><b>Weak entity:</b> key = owner key + partial key.</li>
+      <li><b>Reverse engineering hints:</b> several tables sharing the same key → ISA or a merged many-one. A composite key containing another entity's key → weak entity or relationship. A table that is all key columns referencing two entities → many-many relationship. A table with only a key → entity with no attributes.</li>
+      <li>Many-one relationships are usually folded into the “many” side's table.</li>
+    </ul>
+  </div>
+
+  <h2>6 · XML / index / views</h2>
+  <div class="card">
+    <ul>
+      <li>DTD: none = exactly 1 · <code>?</code> 0–1 · <code>*</code> 0+ · <code>+</code> 1+ · <code>|</code> choice · <code>#PCDATA</code> text.</li>
+      <li><code>&lt;!ATTLIST E a CDATA #REQUIRED&gt;</code> · <code>#IMPLIED</code> optional · <code>#FIXED "SGD"</code> constant.</li>
+      <li><b>ID</b> values: unique, start with a letter or _, no spaces (“B1”, not “1”). IDREF points to an ID.</li>
+      <li>XML needs exactly <b>one root element</b>. JSON arrays become repeated elements.</li>
+      <li>Structured vs unstructured vs semi-structured: fixed schema / no schema / self-describing tags.</li>
+      <li><b>Composite index:</b> equality columns first, then the range/ORDER BY column. A tree index on x helps MAX(x), but not MAX(x·y). Low-selectivity filters (most rows match) gain little. Downsides: slower writes, extra space.</li>
+      <li><b>View</b> = stored query, computed on use · <b>materialized</b> = stored result, fast to read, must be refreshed · <b>temporary</b> = session-only.</li>
+    </ul>
+  </div>
+</main>
+</body>
+</html>

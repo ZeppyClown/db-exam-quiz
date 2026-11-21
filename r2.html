@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SC2207 — Round 2 (targeted)</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <a class="home" href="./">← Home</a>
+  <h1>Round 2 — Targeted</h1>
+  <div class="sub">Built from your Round 1 misses. <b>✍️ questions are exam-style:</b> write your answer on paper, reveal the model answer, then mark yourself honestly. Read the <a href="notes.html">notes</a> first if you want a refresher.</div>
+  <div id="result"></div>
+  <div id="quiz"></div>
+</main>
+<div class="bar">
+  <button class="btn sec" id="reset">Reset</button>
+  <button class="btn" id="check">Check answers</button>
+</div>
+<script>
+const DATA1 = `Emp(eid, dept) = (1,A), (2,A), (3,B), (4,C)<br>Task(tid, eid) = (t1,1), (t2,1), (t3,2), (t4,3), (t5,3)`;
+window.QUIZ = { round: "R2", questions: [
+
+{ sec:"SQL — output tracing", topic:"SQL", ctx: DATA1,
+  q:`Same data as Round 1, but now with a LEFT JOIN:<pre>SELECT E.dept, COUNT(*)
+FROM Emp E LEFT JOIN Task T ON E.eid = T.eid
+GROUP BY E.dept;</pre>`,
+  o:["A→3, B→2","A→3, B→2, C→0","A→3, B→2, C→1","A→3, B→2, C→NULL"], a:2,
+  e:`The LEFT JOIN keeps employee 4 as the row (4, C, NULL, NULL). <b>COUNT(*) counts rows</b>, and that is a row, so C→1. To get C→0 you need <b>COUNT(T.tid)</b>, because COUNT(column) skips NULLs. Remember: inner join means no C row at all; LEFT JOIN + COUNT(*) gives 1; LEFT JOIN + COUNT(col) gives 0.` },
+
+{ sec:"SQL — output tracing", topic:"SQL",
+  ctx:`Account(aid) = 1, 2, 3<br>Transfer(tid, from_aid, to_aid) = (t1, 1, 2), (t2, 2, 1), (t3, 1, NULL)`,
+  q:`<pre>SELECT A.aid, COUNT(*)
+FROM Account A, Transfer T
+WHERE A.aid = T.from_aid OR A.aid = T.to_aid
+GROUP BY A.aid;</pre>`,
+  o:["1→3, 2→2","1→3, 2→2, 3→0","1→2, 2→2","1→3, 2→2, 3→1"], a:0,
+  e:`Go through each (account, transfer) pair:<br>aid 1: t1 (from) ✔, t2 (to) ✔, t3 (from) ✔ → 3<br>aid 2: t1 (to) ✔, t2 (from) ✔ → 2<br>aid 3: no matches, so it's <b>dropped</b> (inner join).<br>This is the exact style of the 2023-24 S2 and 2025-26 S2 papers. List every pair on paper; don't trace it in your head.` },
+
+{ sec:"SQL — output tracing", topic:"SQL",
+  ctx:`Sales(rep, amt) = (Ann, 10), (Bob, 30), (Cat, 30)`,
+  q:`<pre>SELECT rep FROM Sales
+WHERE amt &gt;= ALL (SELECT amt FROM Sales);</pre>`,
+  o:["Bob","Bob, Cat","Cat","Empty"], a:1,
+  e:`<code>&gt;= ALL</code> keeps <b>every tie</b>: 30 ≥ {10, 30, 30} is true for both Bob and Cat. This is why examiners write “return all products if there's a tie”: TOP 1 / LIMIT 1 loses marks. Use <code>&gt;= ALL</code> or <code>= (SELECT MAX(...))</code>.` },
+
+{ sec:"SQL — output tracing", topic:"SQL",
+  ctx:`Sales(rep, amt) = (Ann, 10), (Bob, 30), (Cat, 30), <b>(Dan, NULL)</b>`,
+  q:`Same query: <code>WHERE amt &gt;= ALL (SELECT amt FROM Sales)</code>`,
+  o:["Bob, Cat","Bob, Cat, Dan","Empty","An error"], a:2,
+  e:`Same NULL trap as NOT IN. For Bob, <code>30 &gt;= NULL</code> is UNKNOWN, so “≥ ALL” can never be TRUE. The result is <b>empty</b>. <code>= (SELECT MAX(amt) FROM Sales)</code> would give Bob, Cat, because aggregates ignore NULL. <b>Rule: NOT IN and ALL break on NULLs. EXISTS and MAX don't.</b>` },
+
+{ sec:"SQL — output tracing", topic:"SQL",
+  ctx:`Student(sid), Course(cid), Took(sid, cid), where Took.cid is a FK to Course.`,
+  q:`Which queries find students who took <b>every</b> course?<br><br>
+(i) <code>SELECT sid FROM Student S WHERE NOT EXISTS (SELECT * FROM Course C WHERE NOT EXISTS (SELECT * FROM Took T WHERE T.sid = S.sid AND T.cid = C.cid))</code><br><br>
+(ii) <code>SELECT sid FROM Took GROUP BY sid HAVING COUNT(DISTINCT cid) = (SELECT COUNT(*) FROM Course)</code><br><br>
+(iii) <code>SELECT sid FROM Took WHERE cid = ALL (SELECT cid FROM Course)</code>`,
+  o:["(i) only","(i) and (ii)","(ii) and (iii)","All three"], a:1,
+  e:`(i) is the textbook <b>double NOT EXISTS</b>: “there is no course this student didn't take”. Learn this pattern for division in SQL. (ii) works too, by counting, but it needs the FK and COUNT(DISTINCT). (iii) checks one row against every course id, which is only true when there is exactly one course.` },
+
+{ sec:"Triggers (SQL Server)", topic:"Trigger",
+  q:`<code>INSERT INTO OrderItem VALUES (...), (...), (...)</code> inserts 3 rows in <b>one statement</b>. Your <code>AFTER INSERT</code> trigger fires…`,
+  o:["3 times, with 1 row in <code>inserted</code> each time","Once, with 3 rows in <code>inserted</code>","Once, with only the last row in <code>inserted</code>","3 times, with all 3 rows in <code>inserted</code> each time"], a:1,
+  e:`SQL Server triggers are <b>statement-level</b>. <code>inserted</code> and <code>deleted</code> are tables, so write set-based code (JOIN / GROUP BY on them) and never assume one row. INSERT fills only <code>inserted</code>, DELETE fills only <code>deleted</code>, and UPDATE fills both (old rows in deleted, new rows in inserted).` },
+
+{ type:"open", sec:"Triggers (SQL Server)", topic:"Trigger",
+  ctx:`BOOKING(PID, email, booking_date, num_guests, status)`,
+  q:`(2025-26 S1 Q4a, 9 marks.) Write trigger <code>booking_limit</code> so that each package has at most 50 bookings. Raise an error if the limit is exceeded.`,
+  model:`<pre>CREATE TRIGGER booking_limit
+ON BOOKING
+AFTER INSERT
+AS
+BEGIN
+  IF EXISTS (
+    SELECT B.PID
+    FROM BOOKING B
+    WHERE B.PID IN (SELECT PID FROM inserted)
+    GROUP BY B.PID
+    HAVING COUNT(*) &gt; 50
+  )
+  BEGIN
+    RAISERROR('Package booking limit (50) exceeded', 16, 1);
+    ROLLBACK TRANSACTION;
+  END
+END;</pre>
+<b>Marking points:</b> ON table + AFTER INSERT ✔ · uses <code>inserted</code> ✔ · handles multi-row inserts (IN / GROUP BY, not <code>@pid = (SELECT PID FROM inserted)</code>) ✔ · counts AFTER the insert, so the test is &gt; 50 ✔ · raises an error <b>and</b> rolls back ✔.<br>
+Alternative: <code>INSTEAD OF INSERT</code>, check, then re-INSERT from inserted. <code>THROW 50001, 'msg', 1;</code> also works in place of RAISERROR.` },
+
+{ sec:"Normalisation", topic:"FD / Normalisation",
+  ctx:`R(A,B,C,D), F = {AB→C, C→D}`,
+  q:`R is…`,
+  o:["in BCNF","in 3NF but not BCNF","not in 3NF","can't tell"], a:2,
+  e:`Key: A and B appear on no RHS. AB⁺ = ABCD, so the key is AB. Prime attributes: {A, B}.<br>C→D: is C a superkey? No. Is D prime? No. So it <b>violates 3NF</b>, a classic transitive dependency (AB→C→D).<br><b>Checklist for each FD X→Y:</b> X superkey? Fine for BCNF and 3NF. If not, is Y prime? Then 3NF only. Neither? Not even 3NF.` },
+
+{ sec:"Normalisation", topic:"FD / Normalisation",
+  ctx:`R(A,B,C,D), F = {A→B, C→D}. The key is AC.`,
+  q:`Which decomposition is <b>lossless</b>?`,
+  o:["(A,B), (C,D)","(A,B,C), (C,D)","(A,B), (B,C,D)","(A,C), (B,D)"], a:1,
+  e:`<b>Binary test:</b> R1 ∩ R2 must functionally determine all of R1 or all of R2.<br>A: ∩ = ∅, so lossy.<br>B: ∩ = C, and C→D, so C is a key of (C,D). <b>Lossless</b> ✔<br>C: ∩ = B, and B determines nothing, so lossy.<br>D: ∩ = ∅, so lossy.<br>Lossless means joining the pieces gives back exactly R, with no fake tuples. Dependency-preserving is a different property: each FD can be checked inside one piece.` },
+
+{ type:"open", sec:"Normalisation", topic:"FD / Normalisation",
+  ctx:`R(A,B,C,D,E), F = {A→B, B→C, CD→E}`,
+  q:`(Exam-style, 15 marks.) (a) Find the candidate key(s). (b) Decompose into <b>3NF</b>. (c) Decompose into <b>BCNF</b>. (d) Compare the two results.`,
+  model:`<b>(a)</b> A and D are on no RHS, so they're in every key. AD⁺ = A D B C E = all attributes. <b>Key = AD</b>, the only one.<br><br>
+<b>(b) 3NF synthesis:</b> F is already a minimal basis. Make one relation per FD: R1(A,B), R2(B,C), R3(C,D,E). None of them contains the key AD, so add <b>R4(A,D)</b>.<br>Result: (A,B), (B,C), (C,D,E), (A,D). Lossless ✔ and dependency-preserving ✔ by construction.<br><br>
+<b>(c) BCNF:</b> A→B violates (A isn't a superkey). A⁺ = ABC, so split into R1(A,B,C) and R2(A,D,E).<br>• R1: B→C violates (B isn't a key of ABC), so split into (B,C) and (A,B).<br>• R2(A,D,E): projected FDs are AD→E only. AD is the key, so it's BCNF ✔.<br>Result: (A,B), (B,C), (A,D,E).<br><br>
+<b>(d) Compare:</b> BCNF <b>lost CD→E</b>, since no relation contains C, D and E together, and it can't be derived from A→B, B→C, AD→E. 3NF keeps every FD but has 4 relations. Both are lossless. BCNF removes all FD redundancy. 3NF guarantees dependency preservation and may keep some redundancy.<br>
+<b>Marking points:</b> closure shown ✔ · minimal basis stated ✔ · key relation added ✔ · projected FDs on each BCNF piece ✔ · the lost FD named explicitly ✔.` },
+
+{ type:"open", sec:"Relational algebra", topic:"Relational Algebra",
+  ctx:`ENROLLMENT(sID, type, date, startTime, iID)`,
+  q:`(2025-26 S1 Q1a, 10 marks.) Find students who have taken lessons with the <b>same instructor</b> for at least <b>3 different lesson types</b>.`,
+  model:`<b>With γ (aggregation):</b><br>
+T ← π<sub>sID, iID, type</sub>(ENROLLMENT) &nbsp;&nbsp;<i>(removes repeated dates)</i><br>
+C ← γ<sub>sID, iID; COUNT(type)→n</sub>(T)<br>
+Ans ← π<sub>sID</sub>(σ<sub>n ≥ 3</sub>(C))<br><br>
+<b>Without γ (self-join), also accepted:</b><br>
+E1 ← ρ<sub>E1(s, i, t1)</sub>(T), E2 ← ρ<sub>E2(s2, i2, t2)</sub>(T), E3 ← ρ<sub>E3(s3, i3, t3)</sub>(T)<br>
+Ans ← π<sub>s</sub>(σ<sub>s=s2 ∧ s=s3 ∧ i=i2 ∧ i=i3 ∧ t1&lt;t2 ∧ t2&lt;t3</sub>(E1 × E2 × E3))<br><br>
+<b>Marking points:</b> the projection <b>before</b> counting (otherwise one type on 3 dates counts as 3) ✔ · grouping by <b>both</b> sID and iID (“same instructor”) ✔ · the final projection ✔.` },
+
+{ type:"open", sec:"Relational algebra", topic:"Relational Algebra",
+  ctx:`LESSON(type, duration, fee)`,
+  q:`(2025-26 S1 Q1b-style.) Find the lesson type(s) with the <b>highest fee</b>, ties included. Give one answer <b>with</b> γ and one <b>without</b> γ.`,
+  model:`<b>With γ:</b><br>
+M ← γ<sub>MAX(fee)→m</sub>(LESSON)<br>
+Ans ← π<sub>type</sub>(σ<sub>fee = m</sub>(LESSON × M))<br><br>
+<b>Without γ (“not dominated”):</b><br>
+L1 ← ρ<sub>L1</sub>(LESSON), L2 ← ρ<sub>L2</sub>(LESSON)<br>
+Smaller ← π<sub>L1.type</sub>(σ<sub>L1.fee &lt; L2.fee</sub>(L1 × L2)) &nbsp;&nbsp;<i>(types beaten by something)</i><br>
+Ans ← π<sub>type</sub>(LESSON) − Smaller<br><br>
+For “highest fee <b>per hour</b>”, use an extended projection first: π<sub>type, fee/duration→rate</sub>(LESSON), then do the same.<br>
+<b>Marking points:</b> ties kept ✔ · renaming for the self-join ✔ · set difference used correctly ✔.` },
+
+{ type:"open", sec:"Relational algebra", topic:"Relational Algebra",
+  ctx:`STUDENT(sID, name, gender), INSTRUCTOR(dID, name), SESSION(mID, sID, cID, dID, date)`,
+  q:`(2024-25 S2 Q2a, 10 marks.) Find <b>male</b> students who took <b>all</b> the sessions conducted by Ms. Mary Jones. Ignore the date condition.`,
+  model:`MJ ← π<sub>dID</sub>(σ<sub>name='Mary Jones'</sub>(INSTRUCTOR))<br>
+MJS ← π<sub>mID</sub>(SESSION ⋈ MJ) &nbsp;&nbsp;<i>(all of Mary's sessions: the divisor)</i><br>
+Took ← π<sub>sID, mID</sub>(SESSION) &nbsp;&nbsp;<i>(dividend: exactly answer attrs + divisor attrs)</i><br>
+All ← Took ÷ MJS<br>
+Ans ← π<sub>sID</sub>(All ⋈ σ<sub>gender='M'</sub>(STUDENT))<br><br>
+<b>Division without ÷</b> (worth knowing):<br>
+S ← π<sub>sID</sub>(Took)<br>
+Missing ← π<sub>sID</sub>((S × MJS) − Took)<br>
+All ← S − Missing<br><br>
+<b>Marking points:</b> divisor correct ✔ · dividend projected to (sID, mID) only ✔ · the male filter applied ✔. In this schema each session row has one sID, so “all sessions” means one row per session the student attended.` },
+
+{ sec:"ER & XML", topic:"ER",
+  q:`Room is a <b>weak entity</b> identified by roomNo within Hotel(hname). Room also has attribute type. Its relation is…`,
+  o:["Room(roomNo, type), key roomNo","Room(hname, roomNo, type), key (hname, roomNo)","Room(hname, roomNo, type), key roomNo","Room(roomID, roomNo, type), key roomID"], a:1,
+  e:`A weak entity's key = <b>the owner's key + its partial key</b>. Room 101 exists in many hotels, so roomNo alone isn't unique. In reverse-engineering questions, a schema like G(<u>H, L</u>, R), where H is another entity's key, points to a <b>weak entity</b> (double rectangle, double diamond).` },
+
+{ sec:"ER & XML", topic:"ER",
+  q:`For ISA translation, which approach stores a physical product as a row in <b>both</b> Product and PhysicalProduct?`,
+  o:["ER-style","OO-style","NULL-style","None of them"], a:0,
+  e:`<b>ER-style:</b> one table per entity set. The subclass table holds (superclass key + its own attributes), so the object is spread across both tables.<br><b>OO-style:</b> one table per possible combination, holding all attributes. Each object is in exactly one table.<br><b>NULL-style:</b> one big table, with NULLs for attributes that don't apply.<br>The subclass <b>never</b> gets its own new key.` },
+
+{ sec:"ER & XML", topic:"XML",
+  q:`“Each class has exactly one trainer, a date, a time and a venue, and <b>may have no students or many</b>.” Which DTD rule is right?`,
+  o:["&lt;!ELEMENT Class (Trainer, Date, Time, Venue, Student+)&gt;","&lt;!ELEMENT Class (Trainer, Date, Time, Venue, Student*)&gt;","&lt;!ELEMENT Class (Trainer?, Date, Time, Venue, Student*)&gt;","&lt;!ELEMENT Class (Trainer | Date | Time | Venue | Student)*&gt;"], a:1,
+  e:`Exactly one means no symbol. Zero or more means <code>*</code>. One or more means <code>+</code>. Optional (0 or 1) means <code>?</code>. <code>|</code> means choose one. This is from 2024-25 S1 Q4c (“most classes have many students but some have none”). Other DTD pieces: <code>#PCDATA</code> for leaf text, <code>&lt;!ATTLIST X a CDATA #REQUIRED | #IMPLIED | #FIXED "SGD"&gt;</code>, and <code>ID</code>/<code>IDREF</code>.` }
+]};
+</script>
+<script src="engine.js"></script>
+</body>
+</html>
