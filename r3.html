@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SC2207 — Round 3 (RA + understanding)</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <a class="home" href="./">← Home</a>
+  <h1>Round 3 — RA & “how would I write it”</h1>
+  <div class="sub">No writing needed. Trace relational algebra, close the NULL gap, and pick the correct <i>next step</i> for written-answer topics. Tracing on a scrap of paper helps, but it's fine to do them in your head.</div>
+  <div id="result"></div>
+  <div id="quiz"></div>
+</main>
+<div class="bar">
+  <button class="btn sec" id="reset">Reset</button>
+  <button class="btn" id="check">Check answers</button>
+</div>
+<script>
+const TOOK = `Took(sID, type) = (s1,a), (s1,b), (s2,a), (s3,a), (s3,b), (s3,c)<br>Types(type) = a, b`;
+window.QUIZ = { round: "R3", questions: [
+
+{ sec:"Relational algebra — tracing", topic:"RA", ctx: TOOK,
+  q:`Took ÷ Types = ?`,
+  o:["{s1}","{s1, s3}","{s3}","{s1, s2, s3}"], a:1,
+  e:`÷ keeps every sID paired with <b>every</b> type in Types. s1 has a and b ✔. s2 has only a ✗. s3 has a, b and an extra c ✔. Extra values don't disqualify you; division only asks “covers all of the divisor”.` },
+
+{ sec:"Relational algebra — tracing", topic:"RA", ctx: TOOK + `<br>S = π<sub>sID</sub>(Took)`,
+  q:`Which expression equals Took ÷ Types <b>without using ÷</b>?`,
+  o:["S − π<sub>sID</sub>((S × Types) − Took)","S − π<sub>sID</sub>(Took − (S × Types))","π<sub>sID</sub>(Took ⋈ Types)","S ∩ π<sub>type</sub>(Types)"], a:0,
+  e:`<b>A:</b> S × Types = every (student, required type) combination. Subtract what actually happened (Took) and you get what's <b>missing</b>: {(s2, b)}. Students with something missing = {s2}. S − {s2} = {s1, s3} ✔.<br><b>B</b> is the reverse: Took − (S×Types) = {(s3, c)}, the <i>extra</i> rows, so it wrongly removes s3.<br><b>C</b> = anyone who took at least one required type. <b>D</b> is invalid: ∩ needs matching schemas.<br>Memorise it as: <b>all − (all × required − actual)</b>.` },
+
+{ sec:"Relational algebra — tracing", topic:"RA",
+  ctx:`E(sID, sess) = (s1, x), (s2, x), (s3, x)`,
+  q:`How many tuples does this return?<br>π<sub>E1.sID, E2.sID</sub>(σ<sub>E1.sess = E2.sess ∧ E1.sID ≠ E2.sID</sub>(ρ<sub>E1</sub>(E) × ρ<sub>E2</sub>(E)))`,
+  o:["3","6","9","0"], a:1,
+  e:`× gives 9 combinations. All share session x. ≠ removes the 3 self-pairs, leaving <b>6</b>: (s1,s2) and (s2,s1) are both there, and so on. Using <b>&lt;</b> instead gives 3, one per unordered pair. For “pairs of students”, the examiners expect &lt;.` },
+
+{ sec:"Relational algebra — tracing", topic:"RA",
+  ctx:`Enroll(sID, type, date) = (s1,a,d1), (s1,a,d2), (s1,b,d1), (s2,a,d1), (s2,b,d2), (s2,c,d3)`,
+  q:`The goal is students with ≥ 3 <i>different</i> types. What does this expression <b>actually return</b>?<br>π<sub>sID</sub>(σ<sub>n≥3</sub>(γ<sub>sID; COUNT(type)→n</sub>(Enroll)))`,
+  o:["{s2}","{s1, s2}","{s1}","∅"], a:1,
+  e:`Without projecting first, γ counts <b>rows</b>: s1 has 3 rows (a twice), so n=3 and it passes even though s1 only took 2 types. The correct answer is {s2}, but the expression returns {s1, s2}. Fix: γ over π<sub>sID, type</sub>(Enroll). Spotting this is worth marks in every “at least N” question.` },
+
+{ sec:"Relational algebra — tracing", topic:"RA",
+  ctx:`Lesson(type, fee) = (a, 50), (b, 80), (c, 80). L1 and L2 are ρ copies of Lesson.`,
+  q:`π<sub>type</sub>(Lesson) − π<sub>L1.type</sub>(σ<sub>L1.fee &lt; L2.fee</sub>(L1 × L2)) = ?`,
+  o:["{b}","{b, c}","{a}","{a, b, c}"], a:1,
+  e:`The subtracted part = types that something beats = {a} (50 &lt; 80). All − {a} = {b, c}. Both highest fees are kept, so <b>ties survive</b>. This is the “highest without γ” pattern.` },
+
+{ sec:"Relational algebra — tracing", topic:"RA",
+  ctx:`Same Lesson data: (a, 50), (b, 80), (c, 80)`,
+  q:`Same expression but with <b>≤</b>: σ<sub>L1.fee ≤ L2.fee</sub>. Result?`,
+  o:["{b, c}","{b}","∅","{a}"], a:2,
+  e:`With ≤, every row pairs with <b>itself</b> (80 ≤ 80), so every type counts as “beaten” and everything is removed, giving ∅. Use strict &lt; for max (or &gt; for min). An easy mistake to make under time pressure.` },
+
+{ sec:"Relational algebra — reading", topic:"RA",
+  ctx:`STUDENT(sID, name, gender), INSTRUCTOR(dID, name), SESSION(mID, sID, dID, date)`,
+  q:`What's wrong with STUDENT ⋈ SESSION ⋈ INSTRUCTOR?`,
+  o:["Nothing, it pairs each session with its student and instructor","Natural join also matches on <code>name</code>, so it keeps only sessions where the student and instructor have the same name","It's a cross product","It's a syntax error"], a:1,
+  e:`Natural join equates <b>every</b> attribute with the same name. STUDENT and INSTRUCTOR both have <code>name</code>, which silently filters to same-name pairs. The 2024-25 S2 yoga schema has exactly this. Fix: project away name first, rename with ρ, or use a theta join ⋈<sub>SESSION.dID = INSTRUCTOR.dID</sub>.` },
+
+{ sec:"Relational algebra — reading", topic:"RA",
+  ctx:`Took(sID, type)`,
+  q:`Which gives students who took <b>only</b> type 'a', i.e. 'a' and nothing else?`,
+  o:["π<sub>sID</sub>(σ<sub>type='a'</sub>(Took))","π<sub>sID</sub>(σ<sub>type='a'</sub>(Took)) − π<sub>sID</sub>(σ<sub>type≠'a'</sub>(Took))","π<sub>sID</sub>(σ<sub>type='a' ∧ type≠'a'</sub>(Took))","π<sub>sID</sub>(Took) − π<sub>sID</sub>(σ<sub>type='a'</sub>(Took))"], a:1,
+  e:`“Only X” = <b>did X − did anything other than X</b>. A includes people who also took other types. C is always empty (one row can't be both). D = never took a. In 2023-24 S2 Q1b, “internships all from the same company” uses this subtraction idea.` },
+
+{ sec:"NULL drills", topic:"NULL",
+  ctx:`T(x) = 2, 4, NULL`,
+  q:`<code>SELECT COUNT(*), COUNT(x), SUM(x), AVG(x) FROM T</code>`,
+  o:["3, 3, 6, 2","3, 2, 6, 3","3, 2, 6, 2","2, 2, 6, 3"], a:1,
+  e:`COUNT(*) counts rows = 3. COUNT(x) skips NULL = 2. SUM = 6. AVG = 6 / 2 = <b>3</b>. AVG divides by the non-NULL count, not the row count.` },
+
+{ sec:"NULL drills", topic:"NULL",
+  ctx:`T(x) = 2, 4, NULL`,
+  q:`<code>SELECT x FROM T WHERE x &lt;&gt; 2</code>`,
+  o:["{4}","{4, NULL}","∅","{2, 4, NULL}"], a:0,
+  e:`NULL &lt;&gt; 2 is UNKNOWN, and WHERE keeps only TRUE, so the NULL row disappears. To include it: <code>WHERE x &lt;&gt; 2 OR x IS NULL</code>.` },
+
+{ sec:"NULL drills", topic:"NULL",
+  ctx:`Student(sid) = 1, 2, 3 · Txn(sid) = 1, NULL`,
+  q:`Which query returns {2, 3}?<br>(i) <code>WHERE sid NOT IN (SELECT sid FROM Txn)</code><br>(ii) <code>WHERE NOT EXISTS (SELECT * FROM Txn T WHERE T.sid = S.sid)</code>`,
+  o:["(i) only","(ii) only","Both","Neither"], a:1,
+  e:`(i): for sid 2, <code>2&lt;&gt;1 AND 2&lt;&gt;NULL</code> = TRUE AND UNKNOWN = UNKNOWN, so the result is empty. (ii): the inner query looks for a matching row. For 2 and 3 there is none (NULL = 2 isn't true), so NOT EXISTS is TRUE ✔. <b>Default to NOT EXISTS in the exam.</b>` },
+
+{ sec:"Written-answer steps", topic:"Normalisation",
+  ctx:`R(A,B,C,D), F = {A→B, B→C}. Key = AD.`,
+  q:`BCNF using the X⁺ method (split into X⁺ and X ∪ (R − X⁺)). Starting with A→B, the first split is…`,
+  o:["(A,B), (A,C,D)","(A,B,C), (A,D)","(A,B), (B,C), (C,D)","(A,D), (B,C)"], a:1,
+  e:`A⁺ = {A, B, C}, so R1 = (A,B,C) and R2 = A ∪ (R − A⁺) = (A,D). Next, R1 still has B→C with B not a key of R1, so split again into (B,C), (A,B). Final: (A,B), (B,C), (A,D). Always write X⁺ down, because it earns method marks.` },
+
+{ sec:"Written-answer steps", topic:"Normalisation",
+  ctx:`R(A,B,C,D), F = {AB→C, C→D, D→A}. After a split you get R1(A,C,D).`,
+  q:`Which FDs hold on R1, and is R1 in BCNF?`,
+  o:["{C→D, D→A} (plus C→A). Key C. BCNF ✔","{C→D, D→A} (plus C→A). Key C. Not BCNF, because of D→A","No FDs hold on R1","{AB→C}. Not BCNF"], a:1,
+  e:`<b>Projecting FDs:</b> for each subset X of R1, compute X⁺ under the original F and keep what falls inside R1. C⁺ = {C, D, A}, so C→D and C→A. D⁺ = {D, A}, so D→A. AB→C can't be used, because B isn't in R1.<br>C is the key of R1. D→A has D not a superkey, so <b>not BCNF</b>, and you split again into (D,A), (C,D). Many students forget to project and wrongly declare pieces BCNF.` },
+
+{ sec:"Written-answer steps", topic:"Normalisation",
+  ctx:`R(A,B,C,D), F = {A→B, C→D} (already a minimal basis). Key = AC.`,
+  q:`What is the 3NF synthesis result?`,
+  o:["(A,B), (C,D)","(A,B), (C,D), (A,C)","(A,B,C,D), unchanged","(A,B), (A,C,D)"], a:1,
+  e:`One relation per FD gives (A,B) and (C,D). Neither contains the key AC, so <b>add (A,C)</b>. Without it, the decomposition is lossy. Forgetting the key relation is the #1 deduction in 3NF questions.` },
+
+{ sec:"Written-answer steps", topic:"Trigger",
+  ctx:`Orders(orderid, total), OrderItem(orderid, productid, qty, price). AFTER DELETE trigger on OrderItem.`,
+  q:`Which body correctly keeps Orders.total right?`,
+  o:[`<code>UPDATE Orders SET total = total - (SELECT qty*price FROM deleted)</code>`,
+     `<code>UPDATE O SET total = O.total - D.s FROM Orders O JOIN (SELECT orderid, SUM(qty*price) AS s FROM deleted GROUP BY orderid) D ON O.orderid = D.orderid</code>`,
+     `<code>UPDATE O SET total = O.total - I.qty*I.price FROM Orders O JOIN inserted I ON O.orderid = I.orderid</code>`,
+     `<code>UPDATE Orders SET total = total - OLD.qty*OLD.price WHERE orderid = OLD.orderid</code>`], a:1,
+  e:`A: the subquery errors if more than one row is deleted, and it has no WHERE, so it updates <b>every</b> order. C: <code>inserted</code> is empty on DELETE. D: OLD is Postgres/Oracle. B is set-based, grouped by order and joined to the right rows ✔. Use the same shape for INSERT (add from inserted) and UPDATE (add inserted, subtract deleted).` },
+
+{ sec:"Written-answer steps", topic:"ER",
+  ctx:`B(<u>X</u>, H) · C(<u>M</u>, K, X), where X is B's key and appears in C but is <b>not</b> part of C's key.`,
+  q:`When reverse-engineering, how do you draw X in C?`,
+  o:["A many-one relationship from C to B (arrow pointing to B)","A many-many relationship between C and B","C ISA B","C is a weak entity of B"], a:0,
+  e:`A foreign key that is <b>not part of the key</b> means each C has at most one B, so it's a many-one relationship folded into C's table. Draw a diamond between them with the arrow into B, and don't draw X as an attribute of C. Compare: if X were <i>part of</i> C's key, think weak entity; if C's key = B's key, think ISA; a table that's just (keyA, keyB) is many-many.` },
+
+{ sec:"Written-answer steps", topic:"ER",
+  ctx:`Person(<u>pid</u>, name) · Student(<u>pid</u>, gpa) · Staff(<u>pid</u>, salary)`,
+  q:`What ER construct produced these tables?`,
+  o:["ISA hierarchy (Student and Staff are subclasses of Person), ER-style","Two one-one relationships","A weak entity","Many-many relationships"], a:0,
+  e:`Same key, with each table adding its own attributes: the signature of the <b>ER-style ISA</b> translation. Draw a triangle under Person with Student and Staff below it. Subclasses don't redraw pid.` },
+
+{ sec:"Written-answer steps", topic:"XML",
+  q:`“Each room's currency is always SGD.” Which declaration is right?`,
+  o:[`&lt;!ATTLIST Room currency CDATA #FIXED "SGD"&gt;`,`&lt;!ATTLIST Room currency CDATA #REQUIRED "SGD"&gt;`,`&lt;!ELEMENT currency "SGD"&gt;`,`&lt;!ATTLIST Room currency #PCDATA #FIXED "SGD"&gt;`], a:0,
+  e:`Format: <code>&lt;!ATTLIST element attr TYPE DEFAULT&gt;</code>. The attribute type is CDATA (not #PCDATA, which is only for element content). #FIXED "value" means a constant. #REQUIRED never takes a value. This is from 2023-24 S1 Q4c.` }
+]};
+</script>
+<script src="engine.js"></script>
+</body>
+</html>
