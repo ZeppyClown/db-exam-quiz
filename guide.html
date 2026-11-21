@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SC2207 Study Guide — explained</title>
+<style>
+  :root { --text:#1d1d1f; --muted:#555; --line:#d0d0d6; --accent:#1a4fb5; --soft:#f3f5fa; --ok:#1f7a45; --okbg:#eaf6ef; --bad:#b3261e; --badbg:#fdeeee; --tip:#8a5a00; --tipbg:#fff6e0; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#fff; color:var(--text); font:16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width:820px; margin:0 auto; padding:20px 18px 60px; }
+  h1 { font-size:1.9rem; margin:0 0 4px; }
+  h2 { font-size:1.4rem; color:var(--accent); border-bottom:2px solid var(--accent); padding-bottom:4px; margin:36px 0 12px; }
+  h3 { font-size:1.12rem; margin:24px 0 8px; }
+  h4 { font-size:1rem; margin:16px 0 6px; }
+  p { margin:8px 0; }
+  .sub { color:var(--muted); }
+  code { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.88em; background:var(--soft); padding:1px 4px; border-radius:4px; }
+  pre { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.84rem; line-height:1.4; background:var(--soft); border:1px solid var(--line); border-radius:8px; padding:10px 12px; overflow-x:auto; white-space:pre-wrap; margin:8px 0; }
+  pre code { background:none; padding:0; }
+  table { border-collapse:collapse; margin:8px 0; font-size:.92rem; }
+  th, td { border:1px solid var(--line); padding:4px 9px; text-align:left; vertical-align:top; }
+  th { background:var(--soft); }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; }
+  .box { border-radius:8px; padding:10px 14px; margin:10px 0; border-left:5px solid; }
+  .box > b:first-child { display:block; margin-bottom:2px; }
+  .ex { background:var(--soft); border-color:var(--accent); }
+  .why { background:var(--okbg); border-color:var(--ok); }
+  .bad { background:var(--badbg); border-color:var(--bad); }
+  .tip { background:var(--tipbg); border-color:var(--tip); }
+  ol, ul { padding-left:22px; } li { margin:4px 0; }
+  .toc a { color:var(--accent); text-decoration:none; }
+  .toc li { margin:2px 0; }
+  .home { color:var(--accent); text-decoration:none; font-size:.92rem; }
+  .pb { break-before:page; }
+  @page { size:A4; margin:13mm 12mm; }
+  @media print {
+    body { font-size:10.2pt; line-height:1.42; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    main { max-width:none; padding:0; }
+    .home { display:none; }
+    h2 { margin-top:0; }
+    pre { font-size:8.3pt; }
+    table { font-size:9pt; }
+    .box, pre, table { break-inside:avoid; }
+    h3, h4 { break-after:avoid; }
+  }
+</style>
+</head>
+<body>
+<main>
+<a class="home" href="./">← Home</a>
+<h1>SC2207 Database Systems — Study Guide</h1>
+<p class="sub">Every topic explained from scratch, with a worked example and the mistakes that cost marks. Based on 6 past papers (2023/24 to 2025/26). SQL Server dialect.</p>
+
+<div class="box tip"><b>How the exam is built</b>
+2 hours · 4 questions · 25 marks each · closed book. Across all 6 papers the four questions are always some mix of:
+<ul>
+<li><b>Relational algebra</b> (one whole question, ~25 marks, in every paper)</li>
+<li><b>ER diagrams + functional dependencies / normal forms</b> (~25 marks)</li>
+<li><b>SQL queries</b>: writing them, or predicting their output (~25 marks)</li>
+<li><b>Triggers, views, indexes, constraints, XML/DTD</b> (~25 marks)</li>
+</ul>
+Budget about <b>1.2 minutes per mark</b>: a 10-mark question gets about 12 minutes.</div>
+
+<h3>Contents</h3>
+<ol class="toc">
+<li><a href="#sql">SQL queries: patterns and traps</a></li>
+<li><a href="#trace">Predicting SQL output (tracing)</a></li>
+<li><a href="#ddl">CREATE TABLE, INSERT, constraints</a></li>
+<li><a href="#trig">Triggers (SQL Server)</a></li>
+<li><a href="#view">Views and indexes</a></li>
+<li><a href="#ra">Relational algebra, explained through SQL</a></li>
+<li><a href="#fd">Functional dependencies: closure, keys, minimal basis</a></li>
+<li><a href="#nf">Normal forms: 3NF, BCNF, decomposition</a></li>
+<li><a href="#er">ER diagrams, and turning relations back into ER</a></li>
+<li><a href="#xml">XML, DTD and JSON</a></li>
+</ol>
+
+<!-- ======================================================= -->
+<h2 id="sql" class="pb">1 · SQL queries: patterns and traps</h2>
+
+<h3>1.1 How to attack any SQL question</h3>
+<ol>
+<li><b>Underline the output columns</b> the question asks for. That's your SELECT.</li>
+<li><b>Find the path of tables</b> that connects those columns to the conditions. Every table on the path goes in FROM/JOIN, joined on its key = foreign key.</li>
+<li><b>Row conditions</b> (category = 'coffee', date = …) go in <code>WHERE</code>.</li>
+<li><b>“per / for each / total / count”</b> → <code>GROUP BY</code>. A condition on a count or total → <code>HAVING</code>.</li>
+<li><b>Watch for keywords</b> that change the shape: “all”, “never”, “only”, “both”, “the most”, “ties”, “no JOIN allowed”. Each has a fixed pattern, covered below.</li>
+<li>Ask yourself: <b>can the joins create duplicate rows?</b> If so, use <code>DISTINCT</code> or <code>COUNT(DISTINCT …)</code>.</li>
+</ol>
+
+<h3>1.2 WHERE vs HAVING</h3>
+<p><code>WHERE</code> filters <b>individual rows before</b> grouping, so it can't contain aggregates. <code>HAVING</code> filters <b>whole groups after</b> grouping, so it's where aggregates go.</p>
+<pre>-- Packages over $500, and for each destination with 3+ such packages, the count
+SELECT DID, COUNT(*) AS n
+FROM PACKAGE
+WHERE price &gt; 500          -- row filter: looks at each package
+GROUP BY DID
+HAVING COUNT(*) &gt;= 3;      -- group filter: looks at each destination's count</pre>
+<div class="box bad"><b>Mistake</b><code>WHERE COUNT(*) &gt;= 3</code> is an error. Also, every non-aggregated column in SELECT must appear in GROUP BY. Group by the <b>id</b>, not just the name, because two customers can share a name.</div>
+
+<h3>1.3 “For ALL” (relational division) → double NOT EXISTS</h3>
+<p>Example: <i>students who took <b>every</b> course.</i> SQL has no “for all”, so you turn it around: <b>a student qualifies if there is no course they didn't take.</b></p>
+<pre>SELECT S.name
+FROM Student S
+WHERE NOT EXISTS (                 -- there is no course...
+    SELECT * FROM Course C
+    WHERE NOT EXISTS (             -- ...that this student did not take
+        SELECT * FROM Took T
+        WHERE T.sid = S.sid
+          AND T.cid = C.cid));</pre>
+<div class="box why"><b>Why it works</b>For each student S, the middle query lists the courses S is <i>missing</i>. If that list is empty (NOT EXISTS is true), S took them all.</div>
+<p><b>Counting alternative</b> (fine if Took.cid is a foreign key to Course):</p>
+<pre>SELECT sid FROM Took
+GROUP BY sid
+HAVING COUNT(DISTINCT cid) = (SELECT COUNT(*) FROM Course);</pre>
+<div class="box ex"><b>Exam variant (2024-25 S2)</b>“bought all 'car' products <b>in a single order</b>.” Now the thing that must cover everything is an <i>order</i>, so wrap the double NOT EXISTS inside <code>EXISTS (SELECT * FROM [ORDER] O WHERE O.customerid = C.customerid AND NOT EXISTS (...car product not in O...))</code>.</div>
+
+<h3>1.4 “Never” / “not” → NOT EXISTS</h3>
+<pre>-- customers who never bought a Singapore-made product
+SELECT C.customername FROM CUSTOMER C
+WHERE NOT EXISTS (
+    SELECT * FROM [ORDER] O
+    JOIN ORDER_ITEM OI ON OI.orderid = O.orderid
+    JOIN PRODUCT P     ON P.productid = OI.productid
+    JOIN PRODUCER PR   ON PR.producerid = P.producerid
+    WHERE O.customerid = C.customerid AND PR.country = 'Singapore');</pre>
+<div class="box bad"><b>Mistake 1: NOT IN with NULLs</b><code>WHERE sid NOT IN (SELECT sid FROM TxnLog)</code> returns <b>nothing at all</b> if any TxnLog.sid is NULL, because <code>x &lt;&gt; NULL</code> is UNKNOWN. NOT EXISTS doesn't have this problem, so default to it.</div>
+<div class="box bad"><b>Mistake 2: “&lt;&gt;” in a join is not negation</b><code>JOIN ... ON T.card_to &lt;&gt; H.cardid</code> finds rows where <i>some</i> transfer went elsewhere. It does not mean “never received a transfer”.</div>
+
+<h3>1.5 “Both X and Y”</h3>
+<p>WHERE looks at <b>one row at a time</b>, and one row can't have two categories. So <code>WHERE category='coffee' AND category='tea'</code> is <b>always empty</b>. Correct versions:</p>
+<pre>-- (a) two EXISTS / IN
+SELECT C.name FROM Customer C
+WHERE EXISTS (SELECT * FROM Orders O WHERE O.cid = C.cid AND O.category = 'coffee')
+  AND EXISTS (SELECT * FROM Orders O WHERE O.cid = C.cid AND O.category = 'tea');
+
+-- (b) count distinct
+SELECT cid FROM Orders
+WHERE category IN ('coffee', 'tea')
+GROUP BY cid
+HAVING COUNT(DISTINCT category) = 2;</pre>
+<p><code>... IN (coffee) OR IN (tea)</code> means <i>either</i>, not both.</p>
+
+<h3>1.6 “Only X”</h3>
+<p><i>Customers who bought only coffee</i> = bought coffee <b>and not</b> bought anything else:</p>
+<pre>SELECT DISTINCT cid FROM Orders O
+WHERE category = 'coffee'
+  AND NOT EXISTS (SELECT * FROM Orders O2 WHERE O2.cid = O.cid AND O2.category &lt;&gt; 'coffee');</pre>
+
+<h3>1.7 “The most / highest” with ties</h3>
+<p>Examiners write “if there's a tie, return all of them”. <code>TOP 1</code> loses marks. Two correct ways:</p>
+<pre>-- (a) compare with MAX
+SELECT name, age FROM STUDENT
+WHERE age = (SELECT MIN(age) FROM STUDENT);      -- all the youngest
+
+-- (b) &gt;= ALL, when the "score" is an aggregate
+SELECT A.aID
+FROM TOUR_PACKAGE A
+GROUP BY A.aID
+HAVING COUNT(*) &gt;= ALL (SELECT COUNT(*) FROM TOUR_PACKAGE GROUP BY aID);</pre>
+<div class="box bad"><b>Mistake</b><code>&gt;= ALL</code> returns <b>nothing</b> if the subquery contains a NULL, the same trap as NOT IN. <code>= (SELECT MAX…)</code> is safe because MAX ignores NULLs.</div>
+
+<h3>1.8 “The most” per group (group-wise max)</h3>
+<p><i>For each category, the product(s) with the highest total sales.</i> Same as 1.7, but the subquery is <b>correlated</b> on the category:</p>
+<pre>SELECT P.category, P.pname, P.price
+FROM PRODUCT P
+JOIN ORDER_ITEM OI ON OI.productid = P.productid
+GROUP BY P.productid, P.category, P.pname, P.price
+HAVING SUM(OI.price * OI.quantity) &gt;= ALL (
+    SELECT SUM(OI2.price * OI2.quantity)
+    FROM PRODUCT P2 JOIN ORDER_ITEM OI2 ON OI2.productid = P2.productid
+    WHERE P2.category = P.category            -- same category only
+    GROUP BY P2.productid);</pre>
+
+<h3>1.9 Pairs: “X and Y who were together”</h3>
+<p>Join the table with <b>itself</b> using two aliases. Match on whatever “together” means. Use <code>&lt;</code> so you don't get (Ann, Ann), or both (Ann, Bob) and (Bob, Ann).</p>
+<pre>-- pairs of products bought in the same order, with number of distinct customers
+SELECT A.productid, B.productid, COUNT(DISTINCT O.customerid) AS n
+FROM ORDER_ITEM A
+JOIN ORDER_ITEM B ON B.orderid = A.orderid AND A.productid &lt; B.productid
+JOIN [ORDER] O    ON O.orderid = A.orderid
+GROUP BY A.productid, B.productid;</pre>
+
+<h3>1.10 “Without using JOIN”</h3>
+<p>One paper banned the JOIN keyword. Nest <code>IN</code> or <code>EXISTS</code> subqueries instead:</p>
+<pre>SELECT name FROM STUDENT
+WHERE age &gt;= 21
+  AND sID IN (SELECT sID FROM MEMBERSHIP
+              WHERE yearJoin &gt;= 2020
+              GROUP BY sID HAVING COUNT(*) &gt; 4);</pre>
+
+<h3>1.11 Counting zero: LEFT JOIN</h3>
+<p>An inner join <b>drops</b> rows with no match, so a student with 0 activities simply disappears. To show 0, use LEFT JOIN and count a column from the right-hand table:</p>
+<pre>SELECT S.name, COUNT(A.date) AS n         -- COUNT(column) skips NULLs → 0
+FROM STUDENT S
+LEFT JOIN MEMBERSHIP M ON M.sID = S.sID
+LEFT JOIN ACTIVITY A   ON A.cID = M.cID
+GROUP BY S.sID, S.name;</pre>
+<div class="box bad"><b>Mistake</b><code>COUNT(*)</code> here gives <b>1</b> for a student with no activities, because the LEFT JOIN row (Ann, NULL, NULL) is still a row.</div>
+
+<h3>1.12 NULL rules: the complete list</h3>
+<table>
+<tr><th>Expression</th><th>Result</th><th>Consequence</th></tr>
+<tr><td><code>NULL = 5</code>, <code>NULL &lt;&gt; 5</code>, <code>NULL = NULL</code></td><td>UNKNOWN</td><td>WHERE keeps only TRUE, so the row disappears</td></tr>
+<tr><td><code>x IS NULL</code> / <code>IS NOT NULL</code></td><td>TRUE/FALSE</td><td>The <b>only</b> correct way to test for NULL</td></tr>
+<tr><td><code>COUNT(*)</code></td><td>counts rows</td><td>includes rows with NULLs</td></tr>
+<tr><td><code>COUNT(x)</code>, <code>SUM</code>, <code>AVG</code>, <code>MAX</code></td><td>ignore NULLs</td><td>AVG(2, 4, NULL) = 6/2 = <b>3</b></td></tr>
+<tr><td><code>x NOT IN (…NULL…)</code>, <code>x &gt;= ALL (…NULL…)</code></td><td>never TRUE</td><td>empty result</td></tr>
+<tr><td><code>NOT EXISTS</code></td><td>unaffected</td><td>safe</td></tr>
+</table>
+<p>Example: “programs signed up with a promo code” → <code>WHERE PromoCode IS NOT NULL</code>.</p>
+
+<h3>1.13 Other syntax that comes up</h3>
+<ul>
+<li><b>Dates:</b> <code>'2025-01-03'</code>, <code>YEAR(d) = 2022</code>, <code>MONTH(d)</code>, <code>d BETWEEN '2024-12-01' AND '2024-12-31'</code>, <code>FORMAT(d, 'yyyy-MM')</code>, <code>GETDATE()</code>.</li>
+<li><b>LIKE:</b> <code>name LIKE 'J%'</code> (starts with J), <code>LIKE '%Fashion%'</code> (contains).</li>
+<li><b>UNION</b> to list two kinds of people together, with a constant label column:<br><code>SELECT TID AS ID, Tname AS Name, 'Trainer' AS Role FROM TRAINER WHERE Tname LIKE 'Je%' UNION SELECT SID, Sname, 'Student' FROM STUDENT WHERE Sname LIKE 'Je%';</code></li>
+<li><b>Conditional count:</b> <code>SUM(CASE WHEN gender = 'M' THEN 1 ELSE 0 END) AS males</code>.</li>
+<li><b>Reserved words</b> as table names: <code>[ORDER]</code>, <code>[USER]</code>.</li>
+<li>Some papers say “if a query cannot be constructed, explain why”. For example, a trainer can only be linked to students through SIGNUP, and if a needed attribute doesn't exist, say so.</li>
+</ul>
+
+<!-- ======================================================= -->
+<h2 id="trace" class="pb">2 · Predicting SQL output (tracing)</h2>
+<p>A whole 25-mark question in 2025-26 S2 was “which output is correct?”. The method: <b>never trace in your head. Write out the joined rows.</b></p>
+<ol>
+<li>Write the FROM tables as a list of all row combinations that pass the WHERE/ON condition.</li>
+<li>Cross out rows that fail any condition. Remember NULL comparisons fail.</li>
+<li>Group them, and count or sum each group.</li>
+<li>Apply HAVING, then SELECT only the listed columns. Columns you grouped by but didn't select <b>don't appear</b>.</li>
+</ol>
+<div class="box ex"><b>Worked example</b>
+<div class="row">
+<table><tr><th colspan="2">Account</th></tr><tr><th>aid</th><th></th></tr><tr><td>1</td><td></td></tr><tr><td>2</td><td></td></tr><tr><td>3</td><td></td></tr></table>
+<table><tr><th colspan="3">Transfer</th></tr><tr><th>tid</th><th>from_aid</th><th>to_aid</th></tr><tr><td>t1</td><td>1</td><td>2</td></tr><tr><td>t2</td><td>2</td><td>1</td></tr><tr><td>t3</td><td>1</td><td>NULL</td></tr></table>
+</div>
+<pre>SELECT A.aid, COUNT(*) FROM Account A, Transfer T
+WHERE A.aid = T.from_aid OR A.aid = T.to_aid
+GROUP BY A.aid;</pre>
+Step 1: all 9 (aid, tid) combinations, keeping those where aid is in from <b>or</b> to:
+<table><tr><th>aid</th><th>tid</th><th>passes?</th></tr>
+<tr><td>1</td><td>t1</td><td>✔ (from)</td></tr><tr><td>1</td><td>t2</td><td>✔ (to)</td></tr><tr><td>1</td><td>t3</td><td>✔ (from)</td></tr>
+<tr><td>2</td><td>t1</td><td>✔ (to)</td></tr><tr><td>2</td><td>t2</td><td>✔ (from)</td></tr><tr><td>2</td><td>t3</td><td>✘</td></tr>
+<tr><td>3</td><td>t1, t2, t3</td><td>✘ ✘ ✘</td></tr></table>
+Step 2: group. <b>Result: (1, 3), (2, 2).</b> Account 3 <b>does not appear</b>, not even as 0, because inner joins drop unmatched rows.</div>
+<div class="box tip"><b>The distractors they use</b>
+<ul><li>A row with count 0 for an unmatched key (wrong for inner joins).</li>
+<li>Undercounting a row that matches through both sides of an OR.</li>
+<li>Forgetting that a <b>shared</b> row (one card held by two students) counts once for each holder.</li>
+<li><code>HAVING COUNT(*) &gt;= ALL (...)</code> with ties returns <b>several</b> rows.</li></ul></div>
+
+<!-- ======================================================= -->
+<h2 id="ddl" class="pb">3 · CREATE TABLE, INSERT, constraints</h2>
+<h3>3.1 CREATE TABLE: everything they look for</h3>
+<pre>CREATE TABLE BOOKING (
+  PID          INT          NOT NULL,                 -- 4-digit id → INT
+  email        VARCHAR(100) NOT NULL,
+  booking_date DATE         NOT NULL,
+  num_guests   INT          NOT NULL CHECK (num_guests &gt; 0),      -- attribute CHECK
+  status       VARCHAR(10)  NOT NULL DEFAULT 'pending'
+               CHECK (status IN ('pending', 'confirmed', 'cancelled')),
+  PRIMARY KEY (PID, email, booking_date),                          -- composite key
+  FOREIGN KEY (PID)   REFERENCES PACKAGE(PID),
+  FOREIGN KEY (email) REFERENCES [USER](email)
+      ON DELETE CASCADE                                            -- optional policy
+);</pre>
+<p><b>Types:</b> ids → <code>INT</code> · names/text → <code>VARCHAR(n)</code> · money → <code>DECIMAL(10,2)</code> · dates → <code>DATE</code> · times → <code>TIME</code>.</p>
+<p><b>FK policies:</b> default = reject the change · <code>ON DELETE CASCADE</code> = delete the children too · <code>ON DELETE SET NULL</code>.</p>
+
+<h3>3.2 INSERT: parents first</h3>
+<p>A foreign key must point to a row that already exists, so insert in dependency order:</p>
+<pre>INSERT INTO [USER] (email, name, signup_date) VALUES ('alice@gmail.com', 'Alice', '2025-06-21');
+INSERT INTO DESTINATION (DID, dname, country, description)
+       VALUES (1001, 'Milan', 'Italy', 'Fashion capital with rich history...');
+INSERT INTO PACKAGE (PID, pname, price, duration, DID) VALUES (2001, 'Milan Tour 2025', 899, 8, 1001);
+INSERT INTO BOOKING (PID, email, booking_date, num_guests)
+       VALUES (2001, 'alice@gmail.com', '2025-06-22', 2);   -- status left out → DEFAULT 'pending'</pre>
+<p>If the scenario says the row “already exists”, don't insert it again. Only insert what's new, e.g. a new student → STUDENT row + SIGNUP row.</p>
+
+<h3>3.3 The ways to enforce a constraint (2024-25 S1 asked this)</h3>
+<table>
+<tr><th>Mechanism</th><th>Scope</th><th>Checked when</th><th>Example</th></tr>
+<tr><td>Key (PRIMARY KEY / UNIQUE)</td><td>one table</td><td>insert/update</td><td>no duplicate sID</td></tr>
+<tr><td>Foreign key</td><td>two tables</td><td>insert/update child; delete/update parent</td><td>BOOKING.PID must exist</td></tr>
+<tr><td>Attribute-based CHECK</td><td>one column</td><td>that column changes</td><td><code>CHECK (age &gt;= 0)</code></td></tr>
+<tr><td>Tuple-based CHECK</td><td>one row, several columns</td><td>the row changes</td><td><code>CHECK (endDate &gt; startDate)</code></td></tr>
+<tr><td><b>Assertion</b></td><td><b>any tables</b></td><td><b>every database change</b></td><td><code>CREATE ASSERTION ... CHECK (NOT EXISTS ...)</code></td></tr>
+<tr><td>Trigger</td><td>any tables</td><td>on the events you list</td><td>reject the 51st booking</td></tr>
+</table>
+<p>“Validation across more than one table, checked on every state change” → <b>assertion</b>. (SQL Server doesn't implement assertions, so in practice you use triggers.)</p>
+
+<!-- ======================================================= -->
+<h2 id="trig" class="pb">4 · Triggers (SQL Server)</h2>
+<h3>4.1 The mental model</h3>
+<p>A trigger is code that runs automatically when a table changes. In SQL Server:</p>
+<ul>
+<li>It fires <b>once per statement</b>, not once per row. An INSERT of 3 rows fires it <b>once</b>.</li>
+<li>Inside it you get two read-only <b>tables</b>: <code>inserted</code> (new versions of the changed rows) and <code>deleted</code> (old versions).</li>
+<li>There is <b>no NEW / OLD</b> and <b>no FOR EACH ROW</b>. That syntax is Oracle/Postgres.</li>
+</ul>
+<table>
+<tr><th>Statement</th><th><code>inserted</code> contains</th><th><code>deleted</code> contains</th></tr>
+<tr><td>INSERT</td><td>the new rows</td><td>empty</td></tr>
+<tr><td>DELETE</td><td>empty</td><td>the removed rows</td></tr>
+<tr><td>UPDATE</td><td>rows <b>after</b> the change</td><td>the same rows <b>before</b> the change</td></tr>
+</table>
+<div class="box ex"><b>UPDATE example</b><code>UPDATE ORDER_ITEM SET quantity = 5 WHERE orderid = 7 AND productid = 3;</code> (it was 2). Inside the trigger: <code>deleted</code> = (7, 3, qty 2, price 10), <code>inserted</code> = (7, 3, qty 5, price 10). The total must go up by 5×10 − 2×10 = 30.</div>
+
+<h3>4.2 Skeleton</h3>
+<pre>CREATE TRIGGER trigger_name
+ON table_name
+AFTER INSERT          -- or AFTER INSERT, UPDATE, DELETE   or   INSTEAD OF INSERT
+AS
+BEGIN
+   ...statements that use inserted / deleted...
+END;</pre>
+<p><b>AFTER</b> runs once the change has happened, and can still undo it with ROLLBACK. <b>INSTEAD OF</b> replaces the change; you have to redo it yourself if it's allowed.</p>
+
+<h3>4.3 Template A: reject a change (validation)</h3>
+<p><i>Each package can have at most 50 bookings</i> (2025-26 S1, 9 marks):</p>
+<pre>CREATE TRIGGER booking_limit ON BOOKING
+AFTER INSERT
+AS
+BEGIN
+  IF EXISTS (
+      SELECT B.PID
+      FROM BOOKING B
+      WHERE B.PID IN (SELECT PID FROM inserted)    -- only packages just touched
+      GROUP BY B.PID
+      HAVING COUNT(*) &gt; 50                         -- AFTER trigger: new rows already counted
+  )
+  BEGIN
+      RAISERROR('Booking limit of 50 exceeded', 16, 1);
+      ROLLBACK TRANSACTION;                        -- undo the insert
+  END
+END;</pre>
+<div class="box why"><b>Why “&gt; 50” and not “&gt;= 50”</b>In an AFTER trigger the new booking is already in the table. Exactly 50 is allowed; 51 is not.</div>
+
+<h3>4.4 Template B: keep a derived value correct</h3>
+<p><i>ORDER.grandtotal must always equal SUM(quantity × price) of its items</i> (2024-25 S2). Items can be inserted, updated or deleted, so all three must be handled. The easiest fully correct answer is <b>one trigger that recomputes</b>:</p>
+<pre>CREATE TRIGGER trg_item_total ON ORDER_ITEM
+AFTER INSERT, UPDATE, DELETE
+AS
+BEGIN
+  UPDATE O
+  SET grandtotal = ISNULL((SELECT SUM(I.quantity * I.price)
+                           FROM ORDER_ITEM I
+                           WHERE I.orderid = O.orderid), 0)
+  FROM [ORDER] O
+  WHERE O.orderid IN (SELECT orderid FROM inserted      -- orders affected by
+                      UNION                              -- the new rows
+                      SELECT orderid FROM deleted);      -- or the old rows
+END;</pre>
+<p><b>Delta version</b> (if they ask for separate triggers). INSERT: add the SUM from inserted. DELETE: subtract the SUM from deleted. UPDATE: do both.</p>
+<pre>CREATE TRIGGER trg_item_ins ON ORDER_ITEM AFTER INSERT AS
+BEGIN
+  UPDATE O SET grandtotal = O.grandtotal + X.s
+  FROM [ORDER] O
+  JOIN (SELECT orderid, SUM(quantity * price) AS s FROM inserted GROUP BY orderid) X
+    ON O.orderid = X.orderid;
+END;</pre>
+<div class="box bad"><b>Mistakes that lose marks</b>
+<ul><li>Only writing the INSERT trigger.</li>
+<li><code>SET total = total + (SELECT qty*price FROM inserted)</code>: this errors when more than one row is inserted, and with no WHERE it updates every order.</li>
+<li>Using NEW.qty / OLD.qty.</li>
+<li>Bank-account version (2023-24 S2): a transfer subtracts from aid1 <b>and</b> adds to aid2, and aid2 is NULL for deposits and withdrawals.</li></ul></div>
+
+<h3>4.5 Template C: automatic follow-up insert</h3>
+<pre>CREATE TRIGGER newStudent ON STUDENT
+AFTER INSERT
+AS
+BEGIN
+  INSERT INTO MEMBERSHIP (cID, sID, position, yearJoin)
+  SELECT 'SU001', sID, 'member', YEAR(GETDATE()) FROM inserted;
+
+  INSERT INTO MEMBERSHIP (cID, sID, position, yearJoin)
+  SELECT 'YWS012', sID, 'member', YEAR(GETDATE()) FROM inserted WHERE gender = 'female';
+END;</pre>
+
+<h3>4.6 Template D: act once when a threshold is reached</h3>
+<p><i>Reduce the fee by 10% when signups reach 1,000.</i> Make sure it happens once, not on every later signup:</p>
+<pre>CREATE TRIGGER LowerProgramFee ON SIGNUP
+AFTER INSERT
+AS
+BEGIN
+  UPDATE PROGRAM SET Fee = Fee * 0.9
+  WHERE PID IN (
+    SELECT S.PID FROM SIGNUP S
+    WHERE S.PID IN (SELECT PID FROM inserted)
+    GROUP BY S.PID
+    HAVING COUNT(*) &gt;= 1000                                                -- now ≥ 1000
+       AND COUNT(*) - (SELECT COUNT(*) FROM inserted I WHERE I.PID = S.PID) &lt; 1000);  -- before &lt; 1000
+END;</pre>
+
+<h3>4.7 “Describe the triggers, no code needed” (2025-26 S2)</h3>
+<p>Card.balance must match TxnLog (topup adds to card_from, spend subtracts, transfer moves money from card_from to card_to):</p>
+<ul>
+<li><b>AFTER INSERT on TxnLog:</b> for each new row, apply its effect. Topup: +amount on card_from. Spend: −amount on card_from. Transfer: −amount on card_from and +amount on card_to.</li>
+<li><b>AFTER DELETE:</b> reverse the effect of each deleted row.</li>
+<li><b>AFTER UPDATE:</b> reverse the old row (deleted), then apply the new row (inserted).</li>
+<li>Optionally reject the change if a balance would go negative.</li>
+</ul>
+<p>Enforcing a primary key with triggers: an INSTEAD OF / AFTER INSERT and UPDATE trigger that rejects (RAISERROR + ROLLBACK) if the new sid is NULL or already exists.</p>
+
+<!-- ======================================================= -->
+<h2 id="view" class="pb">5 · Views and indexes</h2>
+<h3>5.1 Views</h3>
+<pre>CREATE VIEW PremierCustomer AS
+SELECT DISTINCT C.cid, C.name
+FROM Customer C JOIN Owns O ON O.cid = C.cid JOIN Account A ON A.aid = O.aid
+WHERE A.amount &gt; 2000;
+
+CREATE VIEW VIPStudent (Studentid, Studentname) AS     -- renamed columns
+SELECT DISTINCT S.sid, S.name FROM Student S JOIN Holds H ON H.sid = S.sid
+JOIN Card C ON C.cardid = H.cardid WHERE C.balance &gt;= 500;</pre>
+<table>
+<tr><th></th><th>View</th><th>Materialized view</th><th>Temporary view/table</th></tr>
+<tr><td>What's stored</td><td>only the query</td><td>the query <b>and its result</b></td><td>a result, for this session only</td></tr>
+<tr><td>Reads</td><td>rerun each time (slower)</td><td>fast</td><td>fast</td></tr>
+<tr><td>Freshness</td><td>always current</td><td>can be stale, needs refreshing</td><td>gone when the session ends</td></tr>
+<tr><td>Cost</td><td>none</td><td>storage + refresh cost on updates</td><td>storage while it lives</td></tr>
+</table>
+<p><b>Why use views:</b> hide sensitive columns (security), simplify complex queries, keep apps working when tables change (logical independence).</p>
+<div class="box bad"><b>Mistake</b>A view only has the columns it selects. PremierCustomer has no address, so “premier customers' addresses” must join the view back to Customer.</div>
+
+<h3>5.2 Indexes</h3>
+<p>An index is a sorted structure (a B+ tree) on one or more columns, so the database can jump straight to matching rows instead of scanning everything.</p>
+<pre>CREATE INDEX StudentIndex ON STUDENT (gender, age);</pre>
+<p><b>Composite index column order:</b> columns tested with <b>=</b> first, then the column used in a <b>range</b> (&gt;, &lt;, BETWEEN) or <b>ORDER BY</b>.</p>
+<div class="box ex"><b>Example (2025-26 S2)</b><code>WHERE CountryNo = 8 AND Date &gt; '2026-01-01' AND Date &lt; '2026-02-01' ORDER BY Date</code> → best index <b>(CountryNo, Date)</b>. All CountryNo 8 entries sit together, already sorted by Date, so it's one contiguous scan and the ORDER BY comes free. With (Date, CountryNo), the country-8 rows are scattered through the date range.</div>
+<table>
+<tr><th>Index on Price. Does it help…</th><th>Answer</th><th>Why</th></tr>
+<tr><td>find MAX(Price)?</td><td><b>Yes</b></td><td>it's the last entry in the tree</td></tr>
+<tr><td>find MAX(Quantity × Price)?</td><td><b>No</b></td><td>the tree is sorted by Price, not by the product</td></tr>
+<tr><td>AVG(Price)?</td><td>a little</td><td>it can read the smaller index instead of the table, but still has to read every entry</td></tr>
+<tr><td>WHERE quantity &gt; 10, index on quantity</td><td>probably not</td><td>if most rows match (low selectivity), a full scan is just as fast</td></tr>
+</table>
+<p><b>Downsides of indexes:</b> slower INSERT/UPDATE/DELETE (the index must be updated too) and extra storage.</p>
+
+<!-- ======================================================= -->
+<h2 id="ra" class="pb">6 · Relational algebra, explained through SQL</h2>
+<p>Relational algebra (RA) is SQL written as maths. Everything works on <b>sets</b>, so there are never duplicate rows. If you can write the SQL, you can translate it.</p>
+<table>
+<tr><th>RA</th><th>Name</th><th>SQL equivalent</th></tr>
+<tr><td>σ<sub>cond</sub>(R)</td><td>selection</td><td><code>SELECT * FROM R WHERE cond</code></td></tr>
+<tr><td>π<sub>a, b</sub>(R)</td><td>projection</td><td><code>SELECT DISTINCT a, b FROM R</code> (removes duplicates!)</td></tr>
+<tr><td>ρ<sub>S(x, y)</sub>(R)</td><td>rename</td><td><code>FROM R AS S</code>, with columns renamed to x, y</td></tr>
+<tr><td>R × S</td><td>cross product</td><td><code>FROM R, S</code> (no condition)</td></tr>
+<tr><td>R ⋈ S</td><td>natural join</td><td>join on <b>all</b> same-named columns</td></tr>
+<tr><td>R ⋈<sub>cond</sub> S</td><td>theta join</td><td><code>R JOIN S ON cond</code> = σ<sub>cond</sub>(R × S)</td></tr>
+<tr><td>R ∪ S, R ∩ S, R − S</td><td>set operations</td><td><code>UNION</code>, <code>INTERSECT</code>, <code>EXCEPT</code> (same columns needed)</td></tr>
+<tr><td>γ<sub>g; COUNT(x)→n</sub>(R)</td><td>grouping</td><td><code>SELECT g, COUNT(x) AS n FROM R GROUP BY g</code></td></tr>
+<tr><td>R ÷ S</td><td>division</td><td>the double NOT EXISTS pattern</td></tr>
+</table>
+<div class="box tip"><b>How to write RA in the exam</b>Break it into <b>named steps</b> with ←, one idea per line. Each step earns partial marks, and it's much easier to read than one giant expression.
+<pre>Coffee  ← σ category='coffee' (PRODUCT)
+Bought  ← π customerid (ORDER ⋈ ORDER_ITEM ⋈ Coffee)
+Ans     ← π customername, email (CUSTOMER ⋈ Bought)</pre></div>
+<div class="box bad"><b>Natural join trap</b>⋈ matches <b>every</b> column with the same name. STUDENT(sID, name) ⋈ SESSION ⋈ INSTRUCTOR(dID, name) also forces student.name = instructor.name. Fix: project away <code>name</code> first, rename it, or use a theta join ⋈<sub>SESSION.dID = INSTRUCTOR.dID</sub>.</div>
+
+<h3>6.1 Pattern 1: “ALL” → division</h3>
+<p><b>R(A, B) ÷ S(B)</b> = the A values that appear in R together with <b>every</b> B value in S.</p>
+<div class="box ex"><b>Worked example</b>: students who took all lesson types.
+<div class="row">
+<table><tr><th colspan="2">Took</th></tr><tr><th>sID</th><th>type</th></tr><tr><td>s1</td><td>a</td></tr><tr><td>s1</td><td>b</td></tr><tr><td>s2</td><td>a</td></tr><tr><td>s3</td><td>a</td></tr><tr><td>s3</td><td>b</td></tr><tr><td>s3</td><td>c</td></tr></table>
+<table><tr><th>Types</th></tr><tr><td>a</td></tr><tr><td>b</td></tr></table>
+<div>Took ÷ Types = <b>{s1, s3}</b><br><br>s1: a ✔ b ✔<br>s2: a ✔ b ✘<br>s3: a ✔ b ✔ (the extra c doesn't matter)</div>
+</div></div>
+<p><b>Setting it up correctly:</b> the dividend must contain <b>exactly</b> (answer columns + divisor columns), nothing more.</p>
+<pre>Answer ← π sID, type (ENROLLMENT) ÷ π type (LESSON)</pre>
+<div class="box bad"><b>Mistake</b><code>ENROLLMENT ÷ π type (LESSON)</code> keeps <i>date</i> and the other columns in the answer. It then finds (student, date) combinations that cover all types <i>on the same date</i>. Always project first.</div>
+<p><b>Division without ÷</b> (in case they ask, or you forget):</p>
+<pre>W       ← π sID (Took)                      -- every candidate
+AllComb ← W × Types                          -- every (candidate, required type)
+Missing ← π sID (AllComb − Took)             -- candidates missing something
+Answer  ← W − Missing</pre>
+<p>In words: <b>all − (all × required − actual)</b>.</p>
+
+<h3>6.2 Pattern 2: “at least N different X” → project, then γ</h3>
+<div class="box ex"><b>Worked example</b>: students who took ≥ 3 different types with the same instructor (2025-26 S1).
+<pre>T   ← π sID, iID, type (ENROLLMENT)          -- STEP 1: remove repeat dates
+C   ← γ sID, iID; COUNT(type)→n (T)          -- STEP 2: count per (student, instructor)
+Ans ← π sID (σ n≥3 (C))                      -- STEP 3: filter, then project</pre>
+SQL equivalent: <code>SELECT DISTINCT sID FROM ENROLLMENT GROUP BY sID, iID HAVING COUNT(DISTINCT type) &gt;= 3</code></div>
+<div class="box why"><b>Why step 1 matters</b>If s1 took piano with i1 on 3 different dates, ENROLLMENT has 3 rows and counting them gives n = 3, even though it's only one type. The projection collapses them to one row (sets have no duplicates), so COUNT effectively becomes COUNT DISTINCT.</div>
+<p><b>Without γ</b>, for small N, self-join N copies and require the values to differ: σ<sub>s1=s2=s3 ∧ i1=i2=i3 ∧ t1&lt;t2 ∧ t2&lt;t3</sub>(T1 × T2 × T3).</p>
+
+<h3>6.3 Pattern 3: “pairs who were together” → self-join</h3>
+<div class="box ex"><b>Worked example</b>: pairs of customers in the same massage session at least 5 times (2024-25 S1).
+<pre>E1  ← ρ E1(c1, t1, d1, s1) (π cID, type, date, startTime (ENROLL))
+E2  ← ρ E2(c2, t2, d2, s2) (π cID, type, date, startTime (ENROLL))
+P   ← σ t1=t2 ∧ d1=d2 ∧ s1=s2 ∧ c1&lt;c2 (E1 × E2)       -- same session, ordered pair
+C   ← γ c1, c2; COUNT(d1)→n (π c1, c2, t1, d1, s1 (P))  -- one row per shared session
+Ans ← π c1, c2 (σ n≥5 (C))</pre></div>
+<p>Why <code>c1 &lt; c2</code>: with 3 people in one session, × gives 9 combinations. ≠ removes the 3 self-pairs and leaves 6, each pair twice. &lt; leaves 3, one per pair.</p>
+
+<h3>6.4 Pattern 4: “the highest / most” → γ MAX, or “not beaten”</h3>
+<div class="box ex"><b>Worked example</b>: lesson type(s) with the highest fee. Data: (a, 50), (b, 80), (c, 80).
+<p><b>With γ:</b></p>
+<pre>M   ← γ MAX(fee)→m (LESSON)                 -- one row: m = 80
+Ans ← π type (σ fee = m (LESSON × M))       -- {b, c}</pre>
+<p><b>Without γ, the “not beaten” trick:</b></p>
+<pre>L1 ← ρ L1 (LESSON),  L2 ← ρ L2 (LESSON)
+Beaten ← π L1.type (σ L1.fee &lt; L2.fee (L1 × L2))   -- {a}: 50 &lt; 80
+Ans    ← π type (LESSON) − Beaten                    -- {b, c}</pre></div>
+<div class="box bad"><b>Mistake</b>Using ≤ instead of &lt;. Every row is ≤ itself, so everything is “beaten” and the answer is empty.</div>
+<p><b>“Most popular”</b> = count first, then take the max of the counts: C ← γ<sub>type; COUNT(cID)→n</sub>(ENROLL), then apply pattern 4 to C. For “highest fee <b>per hour</b>”, compute it with an extended projection first: π<sub>type, fee/duration→rate</sub>(LESSON).</p>
+
+<h3>6.5 Pattern 5: “only” / “never” → set difference</h3>
+<pre>OnlyA  ← π sID (σ type='a' (Took)) − π sID (σ type≠'a' (Took))   -- took a and nothing else
+NeverA ← π sID (STUDENT) − π sID (σ type='a' (Took))             -- never took a</pre>
+
+<!-- ======================================================= -->
+<h2 id="fd" class="pb">7 · Functional dependencies: closure, keys, minimal basis</h2>
+<h3>7.1 What an FD means</h3>
+<p><b>X → Y</b> means: any two rows that agree on X must agree on Y. For example, StudentID → Name.</p>
+<div class="box ex"><b>Checking an FD against a table (2023-24 S1)</b>
+<table><tr><th>A</th><th>B</th><th>C</th><th>D</th></tr><tr><td>a1</td><td>b1</td><td>c1</td><td>d1</td></tr><tr><td>a2</td><td>b2</td><td>c2</td><td>d2</td></tr><tr><td>a3</td><td>b1</td><td>c1</td><td>d1</td></tr><tr><td>a2</td><td>b2</td><td>c2</td><td><b>d1</b></td></tr></table>
+A → D? <b>Violated</b>: a2 appears with d2 and with d1. C → B? Holds: c1 always goes with b1, and c2 with b2.<br>
+One counter-example <b>disproves</b> an FD. A table can never <b>prove</b> one, because future data might break it. Answer with “holds in this instance”.</div>
+
+<h3>7.2 Closure X⁺: the tool you use for everything</h3>
+<p>X⁺ = every attribute X determines. Algorithm: start with X. Repeatedly, if the left side of an FD is inside your set, add its right side. Stop when nothing changes.</p>
+<div class="box ex"><b>Worked example</b>: F = {A→B, BC→D, D→E, E→A}. Compute (BC)⁺:
+<table>
+<tr><th>Step</th><th>FD used</th><th>Set</th></tr>
+<tr><td>start</td><td></td><td>{B, C}</td></tr>
+<tr><td>1</td><td>BC→D (B, C in set)</td><td>{B, C, D}</td></tr>
+<tr><td>2</td><td>D→E</td><td>{B, C, D, E}</td></tr>
+<tr><td>3</td><td>E→A</td><td>{A, B, C, D, E} = everything</td></tr>
+</table>
+So BC is a <b>superkey</b>. To prove an FD like BC→E, show E ∈ (BC)⁺. Write every step with the FD you used; that's where the marks are.</div>
+
+<h3>7.3 Finding ALL candidate keys</h3>
+<p>A <b>superkey</b> determines everything (X⁺ = all attributes). A <b>candidate key</b> is a minimal superkey: remove any attribute and it stops being one.</p>
+<ol>
+<li>Sort the attributes. <b>Never on a right side</b> → must be in <b>every</b> key. <b>Only on right sides</b> → in <b>no</b> key. Everything else → maybe.</li>
+<li>Compute the closure of the “must” set. If it's everything, that's the only key.</li>
+<li>Otherwise add “maybe” attributes one at a time, then two at a time…, and compute closures.</li>
+<li>Skip any set that contains a key you've already found (it wouldn't be minimal).</li>
+</ol>
+<div class="box ex"><b>Worked example</b>: R(A, B, C, D, E), F = {A→B, BC→D, D→E, E→A}
+<ul>
+<li>Right sides: B, D, E, A. <b>C never appears on the right</b>, so C is in every key.</li>
+<li>C⁺ = {C}, not enough. Try adding one attribute:</li>
+<li>AC⁺ = A C → B (A→B) → D (BC→D) → E (D→E) = all ✔</li>
+<li>BC⁺ = all ✔ (shown above) · CD⁺ = C D E A B ✔ · CE⁺ = C E A B D ✔</li>
+<li><b>Candidate keys: AC, BC, CD, CE.</b> Prime attributes: A, B, C, D, E (all of them).</li>
+</ul></div>
+<div class="box tip"><b>Trick question (2025-26 S1)</b>“Which attributes must be in every key?” If every attribute appears on some right side, there may be keys with nothing in common. With F = {P→QR, Q→S, RS→T, ST→U, U→P}, both {P} and {U} are keys, so the answer is <b>none (∅)</b>.</div>
+
+<h3>7.4 Minimal basis (minimal cover)</h3>
+<ol>
+<li><b>Split right sides</b> into single attributes: A→BC becomes A→B and A→C.</li>
+<li><b>Remove redundant FDs:</b> for each FD X→A, temporarily delete it and compute X⁺ with the rest. If A is still in X⁺, the FD is redundant, so delete it for good.</li>
+<li><b>Shrink left sides:</b> for each XY→A, if A ∈ X⁺ (using the full set), replace it with X→A.</li>
+<li>Recheck, because steps 2 and 3 can affect each other.</li>
+</ol>
+<div class="box ex"><b>Worked example</b>: F = {A→BC, B→C, AB→D}
+<ol>
+<li>Split: A→B, A→C, B→C, AB→D</li>
+<li>Is A→C redundant? Without it, A⁺ = {A, B} → C via B→C. Yes, so remove it.</li>
+<li>AB→D: A⁺ = {A, B, C, D} already contains B, so B is extra. Replace it with A→D.</li>
+</ol>
+<b>Minimal basis: {A→B, B→C, A→D}</b></div>
+
+<!-- ======================================================= -->
+<h2 id="nf" class="pb">8 · Normal forms: 3NF, BCNF, decomposition</h2>
+<h3>8.1 Why normalise?</h3>
+<p>Redundancy causes <b>anomalies</b>. With Student(sid, name, course, lecturer) and course → lecturer:</p>
+<ul>
+<li><b>Update anomaly:</b> changing a course's lecturer means updating many rows. Miss one and the data contradicts itself.</li>
+<li><b>Insertion anomaly:</b> you can't record a new course's lecturer until some student takes the course.</li>
+<li><b>Deletion anomaly:</b> deleting the last student in a course loses who teaches it.</li>
+</ul>
+
+<h3>8.2 The definitions: test every FD</h3>
+<p>For each non-trivial FD <b>X → Y</b> (Y not inside X):</p>
+<table>
+<tr><th>Question</th><th>If yes</th></tr>
+<tr><td>1. Is X a <b>superkey</b>?</td><td>OK for both BCNF and 3NF</td></tr>
+<tr><td>2. If not, is every attribute of Y <b>prime</b> (part of some candidate key)?</td><td>OK for 3NF, <b>violates BCNF</b></td></tr>
+<tr><td>3. Neither?</td><td><b>Violates 3NF</b> (and so BCNF)</td></tr>
+</table>
+<p><b>BCNF</b>: every FD passes test 1. <b>3NF</b>: every FD passes test 1 or 2. So <b>every BCNF relation is 3NF</b>, and “BCNF but not 3NF” is impossible.</p>
+<div class="box ex"><b>Three quick examples</b>
+<ul>
+<li>R(A,B,C,D), F = {AB→C, C→D}. Key AB. C→D: C isn't a superkey and D isn't prime, so it <b>fails 3NF</b>.</li>
+<li>R(A,B,C), F = {AB→C, C→B}. Keys AB and AC, so B is prime. C→B: C isn't a superkey, but B is prime, so it's <b>3NF, not BCNF</b>.</li>
+<li>R(A,B,C,D,E), F = {A→B, BC→D, D→E, E→A}. Keys AC, BC, CD, CE, so every attribute is prime. A→B fails BCNF, but B is prime, so it's <b>3NF, not BCNF</b>.</li>
+</ul></div>
+
+<h3>8.3 Lossless join and dependency preservation</h3>
+<p><b>Lossless:</b> joining the pieces gives back exactly the original table, with no fake rows. <b>Test for two pieces:</b> the shared attributes must be a key of at least one piece. That is, (R1 ∩ R2) → R1 or (R1 ∩ R2) → R2.</p>
+<p><b>Dependency-preserving:</b> every original FD can still be checked inside a single piece, or derived from the FDs that hold in the pieces.</p>
+<div class="box ex"><b>Example</b>: R(A, B, C), F = {AB→C, C→B}, split into R1(C, B) and R2(A, C).
+<ul><li>Lossless? R1 ∩ R2 = {C}, and C→B means C is a key of R1. ✔ <b>Lossless.</b></li>
+<li>Preserving? C→B is checkable in R1. AB→C needs A, B and C together, which no piece has. ✘ <b>AB→C is lost.</b></li></ul></div>
+
+<h3>8.4 3NF decomposition (synthesis)</h3>
+<p>This method is <b>always lossless and dependency-preserving</b>.</p>
+<ol>
+<li>Find a <b>minimal basis</b>.</li>
+<li>Make <b>one relation per FD</b>, X ∪ Y. Merge FDs with the same left side if you like.</li>
+<li>If no relation contains a <b>candidate key</b>, <b>add one relation that is just a key</b>.</li>
+<li>Remove any relation that is a subset of another.</li>
+</ol>
+<div class="box ex"><b>Worked example</b>: R(A, B, C, D, E), F = {A→B, B→C, CD→E}
+<ul>
+<li>Key: A and D never appear on the right. AD⁺ = A D B C E = all, so <b>key = AD</b>.</li>
+<li>F is already minimal. One relation per FD: (A, B), (B, C), (C, D, E).</li>
+<li>Does any of them contain AD? No, so <b>add (A, D)</b>.</li>
+<li><b>3NF: (A, B), (B, C), (C, D, E), (A, D)</b></li>
+</ul></div>
+
+<h3>8.5 BCNF decomposition</h3>
+<p>This method is always lossless, but <b>may lose dependencies</b>.</p>
+<ol>
+<li>Find an FD X → Y that <b>violates BCNF</b> (X is not a superkey of the current relation).</li>
+<li>Compute X⁺. Split R into <b>R1 = X⁺</b> and <b>R2 = X ∪ (R − X⁺)</b>.</li>
+<li><b>Project the FDs</b> onto each piece: for subsets of the piece, compute closures using the <i>original</i> F, and keep only the attributes inside the piece.</li>
+<li>Repeat on any piece that still violates BCNF.</li>
+</ol>
+<div class="box ex"><b>Worked example</b>: same R(A, B, C, D, E), F = {A→B, B→C, CD→E}, key AD
+<ol>
+<li>A→B violates (A isn't a superkey). A⁺ = {A, B, C}. Split into <b>R1(A, B, C)</b> and <b>R2(A, D, E)</b>.</li>
+<li>R1(A, B, C): projected FDs A→B, B→C. Key A. B→C violates. B⁺ = {B, C}, so split into <b>(B, C)</b> and <b>(A, B)</b>. Both are BCNF.</li>
+<li>R2(A, D, E): project. A⁺ = ABC, so nothing new in ADE. D⁺ = D. AD⁺ = all, so AD→E. Key AD, and this is <b>BCNF</b>.</li>
+</ol>
+<b>BCNF: (A, B), (B, C), (A, D, E)</b>. Check CD→E: no piece contains C, D and E, and from {A→B, B→C, AD→E}, CD⁺ = {C, D}. So <b>CD→E is lost.</b></div>
+
+<h3>8.6 “Compare and contrast 3NF and BCNF” (asked twice)</h3>
+<div class="box tip"><b>Model paragraph</b>Both decompositions are lossless. The 3NF result preserves every FD, but it may keep some redundancy: here, FDs whose right side is prime but whose left side isn't a key. The BCNF result removes all FD-based redundancy, but it lost <i>[name the FD, e.g. CD→E]</i>, which can now only be checked by joining tables. BCNF is stricter (every BCNF relation is 3NF). Choose 3NF when enforcing every constraint matters; choose BCNF when avoiding redundancy matters more.</div>
+<p>If R is <b>already in 3NF</b> (for example, all attributes are prime), say so: no 3NF decomposition is needed. Then show the BCNF decomposition and point out which FD it loses.</p>
+
+<!-- ======================================================= -->
+<h2 id="er" class="pb">9 · ER diagrams, and turning relations back into ER</h2>
+<h3>9.1 Notation (textbook / Ullman style)</h3>
+<table>
+<tr><th>Shape</th><th>Meaning</th></tr>
+<tr><td>Rectangle</td><td>entity set (e.g. Student)</td></tr>
+<tr><td>Oval</td><td>attribute. Underlined = part of the key</td></tr>
+<tr><td>Diamond</td><td>relationship (e.g. Enrolls), which may have its own attributes</td></tr>
+<tr><td>Arrow from E into R's other side</td><td>many-one: each E relates to <b>at most one</b> of the entity the arrow points to</td></tr>
+<tr><td>Arrows on both sides</td><td>one-one</td></tr>
+<tr><td>Rounded arrow</td><td>exactly one (referential integrity)</td></tr>
+<tr><td>Triangle “isa”</td><td>subclass (inheritance)</td></tr>
+<tr><td>Double rectangle + double diamond</td><td>weak entity set + its supporting relationship</td></tr>
+</table>
+
+<h3>9.2 Subclasses (ISA)</h3>
+<p>A subclass is a special kind of the superclass: Physical Product <b>isa</b> Product. It inherits all the superclass's attributes and its key, and adds its own attributes and relationships. Constraints to state: <b>disjoint vs overlapping</b> (can a product be both kinds?) and <b>total vs partial</b> (must every product be one of the kinds?).</p>
+<p><b>Three ways to turn ISA into tables</b> (Product(<u>pid</u>, name, price), subclass PhysicalProduct with weight):</p>
+<table>
+<tr><th>Style</th><th>Tables</th><th>Note</th></tr>
+<tr><td><b>ER-style</b></td><td>Product(<u>pid</u>, name, price), PhysicalProduct(<u>pid</u>, weight)</td><td>a physical product has a row in <b>both</b></td></tr>
+<tr><td>OO-style</td><td>Product(<u>pid</u>, name, price), PhysicalProduct(<u>pid</u>, name, price, weight)</td><td>each object is in <b>exactly one</b> table</td></tr>
+<tr><td>NULL-style</td><td>Product(<u>pid</u>, name, price, weight)</td><td>weight is NULL for non-physical products</td></tr>
+</table>
+<p>In every style, <b>the subclass key is the superclass key</b>. Never invent a new one.</p>
+
+<h3>9.3 Weak entities</h3>
+<p>A weak entity can't be identified by its own attributes. Room 101 exists in many hotels, so a Room is identified by <b>its hotel's key + its own partial key</b>: Room(<u>hname, roomNo</u>, type).</p>
+
+<h3>9.4 ER → tables (the forward direction)</h3>
+<ul>
+<li>Entity set → a table with its attributes, and its key as the key.</li>
+<li><b>Many-many</b> relationship → its own table: (key of E1, key of E2, relationship attributes), with both keys together as the key.</li>
+<li><b>Many-one</b> relationship → no new table. Put the “one” side's key as a foreign key in the “many” side's table.</li>
+<li>Weak entity → owner's key + partial key.</li>
+</ul>
+
+<h3>9.5 Tables → ER (reverse engineering, asked 3 times)</h3>
+<p>Look at each table's key and its foreign keys:</p>
+<table>
+<tr><th>Clue in the table</th><th>What to draw</th></tr>
+<tr><td>Its own single key + plain attributes: F(<u>W</u>, Y)</td><td>Entity set F, with attribute Y</td></tr>
+<tr><td>A non-key column that is another table's key: B(<u>X</u>, H), where H is A's key</td><td><b>Many-one</b> relationship B → A (arrow into A). Don't draw H as an attribute of B.</td></tr>
+<tr><td>The key is just two other tables' keys: S(<u>W, M</u>)</td><td><b>Many-many</b> relationship between those two entities</td></tr>
+<tr><td>The key = another table's key + an extra column: G(<u>H, L</u>, R)</td><td><b>Weak entity</b> G owned by A, partial key L</td></tr>
+<tr><td>Several tables with the <b>same key</b>: C(<u>M</u>, K, X), D(<u>M</u>, N, H), E(<u>M</u>, P)</td><td><b>ISA</b>: the most general one (E) is the superclass, the others are subclasses</td></tr>
+<tr><td>A table with only a key: R4(<u>G</u>)</td><td>An entity with no other attributes, or say it can't be mapped and explain why</td></tr>
+</table>
+<div class="box ex"><b>Worked example (2023-24 S2)</b>: A(<u>H</u>, Z), B(<u>X</u>, H), C(<u>M</u>, K, X), D(<u>M</u>, N, H), E(<u>M</u>, P), F(<u>W</u>, Y), G(<u>H, L</u>, R), S(<u>W, M</u>), U(<u>H, M</u>)
+<ul>
+<li>Entities: <b>A</b> (key H, attr Z), <b>B</b> (key X), <b>F</b> (key W, attr Y), <b>E</b> (key M, attr P).</li>
+<li>B has H, A's key, as a non-key column → <b>B —many-one→ A</b>.</li>
+<li>C, D, E share key M → <b>C isa E</b> (attr K), <b>D isa E</b> (attr N).</li>
+<li>C has X → <b>C —many-one→ B</b>. D has H → <b>D —many-one→ A</b>.</li>
+<li>G(<u>H, L</u>, R) → <b>weak entity G</b>, owner A, partial key L, attr R.</li>
+<li>S(<u>W, M</u>) → <b>many-many F — E</b>. U(<u>H, M</u>) → <b>many-many A — E</b>.</li>
+</ul>
+Write your assumptions next to the diagram. Several readings can get full marks if they're justified.</div>
+
+<h3>9.6 Designing an ER diagram from a story</h3>
+<ol>
+<li>Nouns that have their own properties → <b>entity sets</b>. Verbs that link them → <b>relationships</b>.</li>
+<li>For each relationship ask: “can one X have many Y? can one Y have many X?” That gives you the arrows.</li>
+<li>“Kinds of” something (Professor, PhD student, Researcher are all kinds of Person) → <b>ISA</b>. State disjoint/overlapping and total/partial.</li>
+<li>Something that only exists with an owner (a Grant only for a funded project) → a weak entity, or a subclass “FundedProject”.</li>
+<li>Write your assumptions.</li>
+</ol>
+<p><b>Relational vs semi-structured</b> (2024-25 S2, chat sessions): a session is a variable-length sequence of prompt/response turns. You can do it relationally, Session(<u>sid</u>, customer, start) + Turn(<u>sid, turnNo</u>, prompt, response, time), but nested or variable data like this fits more naturally in JSON/XML (semi-structured).</p>
+
+<!-- ======================================================= -->
+<h2 id="xml" class="pb">10 · XML, DTD and JSON</h2>
+<h3>10.1 Structured vs semi-structured vs unstructured</h3>
+<table>
+<tr><th></th><th>Structured</th><th>Semi-structured</th><th>Unstructured</th></tr>
+<tr><td>Schema</td><td>fixed, defined first</td><td>flexible, self-describing (tags)</td><td>none</td></tr>
+<tr><td>Examples</td><td>relational tables</td><td>XML, JSON</td><td>text, images, video</td></tr>
+<tr><td>Querying</td><td>SQL, easy</td><td>XPath/XQuery, JSON queries</td><td>hard (search, ML)</td></tr>
+</table>
+
+<h3>10.2 XML rules</h3>
+<ul>
+<li>Exactly <b>one root element</b> wraps everything.</li>
+<li>Every tag is closed (<code>&lt;a&gt;…&lt;/a&gt;</code> or <code>&lt;a/&gt;</code>), properly nested, and case-sensitive.</li>
+<li>Attribute values are quoted: <code>&lt;Room currency="SGD"&gt;</code>.</li>
+</ul>
+
+<h3>10.3 DTD: describing what valid XML looks like</h3>
+<table>
+<tr><th>Symbol</th><th>Meaning</th><th>Example</th></tr>
+<tr><td>(none)</td><td>exactly one</td><td><code>(Name, Address)</code></td></tr>
+<tr><td><code>?</code></td><td>zero or one (optional)</td><td><code>PromoCode?</code></td></tr>
+<tr><td><code>*</code></td><td>zero or more</td><td><code>Student*</code></td></tr>
+<tr><td><code>+</code></td><td>one or more</td><td><code>Room+</code></td></tr>
+<tr><td><code>|</code></td><td>choice</td><td><code>(Email | Phone)</code></td></tr>
+<tr><td><code>#PCDATA</code></td><td>text content</td><td><code>&lt;!ELEMENT Name (#PCDATA)&gt;</code></td></tr>
+</table>
+<p><b>Attributes:</b> <code>&lt;!ATTLIST element attrName TYPE DEFAULT&gt;</code></p>
+<ul>
+<li>TYPE: <code>CDATA</code> (text), <code>ID</code> (unique identifier), <code>IDREF</code> (points to an ID), or a list <code>(a|b)</code>.</li>
+<li>DEFAULT: <code>#REQUIRED</code>, <code>#IMPLIED</code> (optional), <code>#FIXED "SGD"</code> (constant), or a default value <code>"pending"</code>.</li>
+<li><b>ID values</b> must be unique across the document, start with a letter or underscore, and contain no spaces: <code>"B1"</code> ✔ <code>"1"</code> ✘ <code>"B 1"</code> ✘.</li>
+</ul>
+<div class="box ex"><b>Worked example (2023-24 S1)</b>: hotels with an address and at least one room. Currency is always SGD.
+<pre>&lt;!DOCTYPE Hotels [
+&lt;!ELEMENT Hotels  (Hotel*)&gt;
+&lt;!ELEMENT Hotel   (Hname, Address, Room+)&gt;              &lt;!-- at least one room --&gt;
+&lt;!ELEMENT Address (UnitNo, StreetName, Zipcode, Country)&gt;
+&lt;!ELEMENT Room    (RoomNo, Type, Price)&gt;
+&lt;!ATTLIST Price currency CDATA #FIXED "SGD"&gt;             &lt;!-- constant --&gt;
+&lt;!ELEMENT Hname (#PCDATA)&gt;      &lt;!ELEMENT UnitNo (#PCDATA)&gt;
+&lt;!ELEMENT StreetName (#PCDATA)&gt; &lt;!ELEMENT Zipcode (#PCDATA)&gt;
+&lt;!ELEMENT Country (#PCDATA)&gt;    &lt;!ELEMENT RoomNo (#PCDATA)&gt;
+&lt;!ELEMENT Type (#PCDATA)&gt;       &lt;!ELEMENT Price (#PCDATA)&gt;
+]&gt;</pre>
+A matching document:
+<pre>&lt;Hotels&gt;
+  &lt;Hotel&gt;
+    &lt;Hname&gt;Marina Inn&lt;/Hname&gt;
+    &lt;Address&gt;&lt;UnitNo&gt;01-02&lt;/UnitNo&gt;&lt;StreetName&gt;Bayfront Ave&lt;/StreetName&gt;
+             &lt;Zipcode&gt;018956&lt;/Zipcode&gt;&lt;Country&gt;Singapore&lt;/Country&gt;&lt;/Address&gt;
+    &lt;Room&gt;&lt;RoomNo&gt;101&lt;/RoomNo&gt;&lt;Type&gt;Deluxe&lt;/Type&gt;&lt;Price currency="SGD"&gt;250&lt;/Price&gt;&lt;/Room&gt;
+  &lt;/Hotel&gt;
+&lt;/Hotels&gt;</pre></div>
+<div class="box tip"><b>DTD from a relational schema</b>“Group by X” means X is the repeating element under the root, and the related data nests inside it. Use <code>*</code> where the story says “some have none”, <code>+</code> for “at least one”, and <code>?</code> for optional values like PromoCode. Use ID/IDREF when an object is shared, so you don't repeat it (e.g. Post author="U1" → User id="U1").</div>
+
+<h3>10.4 JSON ↔ XML</h3>
+<table>
+<tr><th>JSON</th><th>XML</th></tr>
+<tr><td>object <code>{ "name": "Alan" }</code></td><td>element with child elements <code>&lt;Person&gt;&lt;Name&gt;Alan&lt;/Name&gt;&lt;/Person&gt;</code></td></tr>
+<tr><td>array <code>"Courses": [ {...}, {...} ]</code></td><td>the same element repeated <code>&lt;Course&gt;…&lt;/Course&gt;&lt;Course&gt;…&lt;/Course&gt;</code></td></tr>
+<tr><td>the top-level object</td><td>needs a root element, e.g. <code>&lt;People&gt;</code></td></tr>
+<tr><td>a field missing for some objects</td><td>just leave the element out (in the DTD: <code>?</code>)</td></tr>
+</table>
+<pre>{ "Person": [ { "Name": "Alan", "Age": 32,
+                "Roles": [ { "Role": "TA", "Course": "SC2207" } ] } ] }
+
+&lt;People&gt;
+  &lt;Person&gt;
+    &lt;Name&gt;Alan&lt;/Name&gt;&lt;Age&gt;32&lt;/Age&gt;
+    &lt;Role&gt;&lt;Title&gt;TA&lt;/Title&gt;&lt;Course&gt;SC2207&lt;/Course&gt;&lt;/Role&gt;
+  &lt;/Person&gt;
+&lt;/People&gt;</pre>
+<p>Simple values can also be attributes: <code>&lt;Person name="Alan" age="32"&gt;</code>.</p>
+
+<div class="box tip" style="margin-top:28px"><b>Final checklist for exam day</b>
+<ul>
+<li>SQL: group by the id · DISTINCT where joins duplicate rows · ties → = MAX or ≥ ALL · “all” → double NOT EXISTS · “never” → NOT EXISTS · LEFT JOIN + COUNT(col) for zeros.</li>
+<li>Triggers: inserted/deleted tables · set-based · cover INSERT, UPDATE and DELETE · RAISERROR + ROLLBACK.</li>
+<li>RA: named steps · project before ÷ and before COUNT · rename for self-joins · &lt; not ≤.</li>
+<li>FDs: show every closure step · find all keys · prime → 3NF check · add the key relation in 3NF · project FDs in BCNF · name the lost FD.</li>
+<li>ER: arrows into the “one” side · ISA from shared keys · weak entity from a composite key containing an FK · write assumptions.</li>
+<li>XML: one root · <code>* + ?</code> · CDATA for attributes · IDs start with a letter.</li>
+</ul></div>
+</main>
+</body>
+</html>
