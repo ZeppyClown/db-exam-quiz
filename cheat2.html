@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SC2207 — Cheat sheet Part 2 (gap filler)</title>
+<style>
+  :root { --text:#1d1d1f; --muted:#555; --line:#cfd2da; --accent:#1a4fb5; --soft:#f3f5fa; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#fff; color:var(--text); font:15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:18px 16px 50px; }
+  h1 { font-size:1.6rem; margin:0 0 4px; }
+  h2 { font-size:1.15rem; color:#fff; background:var(--accent); padding:4px 10px; border-radius:6px; margin:22px 0 10px; }
+  .sub { color:var(--muted); font-size:.92rem; }
+  .card { border:1px solid var(--line); border-radius:8px; padding:10px 13px; margin:0 0 10px; }
+  .card h3 { margin:0 0 6px; font-size:1.02rem; color:var(--accent); }
+  .card p { margin:5px 0; }
+  .card ul { margin:4px 0; padding-left:20px; } .card li { margin:3px 0; }
+  code { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.86em; background:var(--soft); padding:0 3px; border-radius:3px; }
+  pre { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.8rem; line-height:1.35; background:var(--soft); border:1px solid var(--line); border-radius:6px; padding:7px 9px; white-space:pre-wrap; margin:6px 0; }
+  table.t { border-collapse:collapse; width:100%; font-size:.88rem; margin:6px 0; }
+  table.t td, table.t th { border:1px solid var(--line); padding:3px 6px; text-align:left; vertical-align:top; }
+  table.t th { background:var(--soft); }
+  .home { color:var(--accent); text-decoration:none; font-size:.9rem; }
+  .toc { columns:2; font-size:.9rem; margin:6px 0 0; padding-left:20px; }
+  @page { size:A4; margin:11mm 11mm; }
+  @media print {
+    body { font-size:9.1pt; line-height:1.36; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    main { max-width:none; padding:0; }
+    .home { display:none; }
+    pre { font-size:7.6pt; } table.t { font-size:8.2pt; } code { font-size:8pt; }
+    .card { break-inside:avoid; }
+    h2 { break-after:avoid; }
+  }
+</style>
+</head>
+<body>
+<main>
+<a class="home" href="./">← Home</a>
+<h1>SC2207 Cheat Sheet — Part 2</h1>
+<p class="sub">Only what's <b>missing or too thin</b> in Part 1 and the study guide. Found by checking all 6 past papers and the textbook syllabus against what you already have. Nothing here repeats the earlier sheets. SQL Server dialect.</p>
+<ol class="toc">
+<li>SQL semantics: NULL logic, subqueries, outer joins, set operations, CASE</li>
+<li>Views, constraints, referential integrity, triggers</li>
+<li>Indexes: theory and the "why"</li>
+<li>FD and normal-form theory</li>
+<li>Relational algebra extras</li>
+<li>ER design</li>
+<li>Data models, XML, JSON, XPath</li>
+<li>Full answers to past-paper questions not covered before</li>
+</ol>
+
+<!-- ============================================================ -->
+<h2>1 · SQL semantics</h2>
+
+<div class="card"><h3>Three-valued logic (TRUE / FALSE / UNKNOWN)</h3>
+<p>Any comparison with NULL is UNKNOWN. Think T = 1, U = ½, F = 0: <b>AND = min, OR = max, NOT x = 1 − x</b>.</p>
+<table class="t"><tr><th>x</th><th>y</th><th>x AND y</th><th>x OR y</th><th>NOT x</th></tr>
+<tr><td>T</td><td>U</td><td>U</td><td>T</td><td>F</td></tr>
+<tr><td>F</td><td>U</td><td><b>F</b></td><td>U</td><td>T</td></tr>
+<tr><td>U</td><td>U</td><td>U</td><td>U</td><td><b>U</b></td></tr></table>
+<ul>
+<li><b>WHERE, HAVING and ON keep only TRUE</b>, so UNKNOWN rows are dropped. Textbook trap: <code>WHERE length &lt;= 120 OR length &gt; 120</code> does <b>not</b> return every movie, because rows with NULL length give U OR U = U.</li>
+<li><b>A CHECK constraint rejects only FALSE</b>, so UNKNOWN passes. <code>CHECK (age &gt; 0)</code> accepts age = NULL. Add NOT NULL if NULL must be rejected.</li>
+<li>NOT(UNKNOWN) = UNKNOWN, so <code>WHERE NOT (x = 5)</code> still drops rows where x is NULL.</li>
+<li>Arithmetic with NULL gives NULL: <code>NULL + 5</code>, <code>price * NULL</code>.</li>
+<li>Where NULLs <i>are</i> treated as equal: GROUP BY (all NULLs form one group), DISTINCT, and UNION/INTERSECT/EXCEPT. In SQL Server, a UNIQUE column allows only <b>one</b> NULL.</li>
+</ul></div>
+
+<div class="card"><h3>IN / EXISTS / ANY (SOME) / ALL: exact semantics</h3>
+<table class="t"><tr><th>Predicate</th><th>TRUE when</th><th>Subquery empty</th></tr>
+<tr><td><code>EXISTS (S)</code></td><td>S has ≥ 1 row (even an all-NULL row)</td><td>FALSE</td></tr>
+<tr><td><code>NOT EXISTS (S)</code></td><td>S has no rows</td><td>TRUE</td></tr>
+<tr><td><code>x IN (S)</code> ≡ <code>x = ANY (S)</code></td><td>x equals some value</td><td>FALSE</td></tr>
+<tr><td><code>x NOT IN (S)</code> ≡ <code>x &lt;&gt; ALL (S)</code></td><td>x differs from every value</td><td>TRUE</td></tr>
+<tr><td><code>x &gt; ANY (S)</code></td><td>x &gt; at least one value (x &gt; MIN)</td><td>FALSE</td></tr>
+<tr><td><code>x &gt; ALL (S)</code></td><td>x &gt; every value (x &gt; MAX)</td><td><b>TRUE</b> (vacuously)</td></tr></table>
+<ul>
+<li><b>Empty-set trap:</b> <code>HAVING COUNT(*) &gt;= ALL (subquery)</code> is TRUE for every row if the correlated subquery returns nothing, so you get extra rows. <code>= (SELECT MAX(...))</code> on an empty set compares with NULL, so you get <b>no</b> rows.</li>
+<li><code>x &lt;&gt; ANY (S)</code> means "differs from <i>at least one</i> value". It is <b>not</b> the same as NOT IN. With S = {1, 2}, every x satisfies it.</li>
+<li>When S contains a NULL: <code>x IN (1, NULL)</code> is TRUE if x = 1, otherwise UNKNOWN. <code>x &gt; ALL (1, NULL)</code> can never be TRUE.</li>
+<li>A scalar subquery (<code>x = (SELECT ...)</code>) that returns more than one row is a <b>runtime error</b>. If it returns 0 rows, the value is NULL.</li>
+<li>Inside EXISTS, the SELECT list doesn't matter: <code>SELECT *</code>, <code>SELECT 1</code> and <code>SELECT NULL</code> behave the same.</li>
+</ul></div>
+
+<div class="card"><h3>Outer joins: which NULLs appear</h3>
+<p>Example data: R(a, b) = {(1, x), (2, y)} and S(b, c) = {(x, 10), (z, 30)}. A row with no match is called <b>dangling</b>. An outer join keeps it and fills the other table's columns with NULL.</p>
+<table class="t"><tr><th>R ? JOIN S ON R.b = S.b</th><th>Rows (a, R.b, S.b, c)</th></tr>
+<tr><td>INNER</td><td>(1, x, x, 10)</td></tr>
+<tr><td>LEFT (RA ⟕)</td><td>+ (2, y, NULL, NULL)</td></tr>
+<tr><td>RIGHT (RA ⟖)</td><td>(1, x, x, 10), (NULL, NULL, z, 30)</td></tr>
+<tr><td>FULL (RA ⟗)</td><td>all 3 rows above</td></tr></table>
+<pre>-- Trap: a WHERE condition on the right table undoes the LEFT JOIN
+SELECT S.name, COUNT(A.aid) FROM STUDENT S
+LEFT JOIN ACTIVITY A ON A.sid = S.sid AND A.year = 2024  -- keeps 0-count students
+-- WHERE A.year = 2024   &lt;- NULL = 2024 is UNKNOWN, so dangling rows go (= inner join)
+GROUP BY S.sid, S.name;
+-- Anti-join ("never"): LEFT JOIN ... WHERE A.sid IS NULL</pre>
+<p>SQL Server has <b>no NATURAL JOIN</b>, so always write ON.</p></div>
+
+<div class="card"><h3>UNION / INTERSECT / EXCEPT: set vs bag</h3>
+<ul>
+<li>A plain SELECT returns a <b>bag</b> (duplicates kept). UNION, INTERSECT and EXCEPT <b>remove duplicates</b> by default. Add <b>ALL</b> to keep them.</li>
+<li>If a row appears m times in R and n times in S: <b>UNION ALL</b> gives m + n copies, <b>INTERSECT ALL</b> gives min(m, n), <b>EXCEPT ALL</b> gives max(m − n, 0). SQL Server supports only UNION ALL.</li>
+<li>Columns are matched by <b>position</b>, not by name, and their types must be compatible. Result column names come from the first query. You can only have one ORDER BY, at the very end.</li>
+</ul>
+<pre>-- students who took DB but not OS (EXCEPT = RA "−")
+SELECT sid FROM Took WHERE cid = 'DB'
+EXCEPT
+SELECT sid FROM Took WHERE cid = 'OS';</pre></div>
+
+<div class="card"><h3>Evaluation order, correlation, CASE</h3>
+<p><b>Logical order:</b> FROM/JOIN…ON → WHERE → GROUP BY → HAVING → SELECT (aliases, then DISTINCT) → ORDER BY → TOP. Many errors follow from this order:</p>
+<ul>
+<li>A SELECT alias can't be used in WHERE, GROUP BY or HAVING, because it doesn't exist yet at that point. It <b>can</b> be used in ORDER BY.</li>
+<li>ORDER BY can use a column you didn't select, unless you use SELECT DISTINCT. Sorting defaults to ASC, so "most recent first" needs <code>ORDER BY yearFounded DESC</code>.</li>
+<li><b>Uncorrelated</b> subquery: runs once. <b>Correlated</b> subquery: refers to the outer query's alias, so it re-runs for every outer row.</li>
+<li><b>Scope trap:</b> an unqualified column that the inner table doesn't have silently binds to the outer table. <code>WHERE sid IN (SELECT sid FROM Course)</code>, with no sid column in Course, returns every row. Always qualify your columns.</li>
+</ul>
+<pre>SELECT name,
+  CASE WHEN score &gt;= 80 THEN 'A'
+       WHEN score &gt;= 65 THEN 'B'      -- the first true WHEN wins
+       ELSE 'C' END AS grade          -- no ELSE means NULL
+FROM Result;
+-- Pivot: SUM(CASE WHEN YEAR(d)=2024 THEN amt ELSE 0 END) AS y2024</pre></div>
+
+<div class="card"><h3>WHERE vs HAVING: the full 8-mark comparison (2025-26 S1 Q4b)</h3>
+<table class="t"><tr><th></th><th>WHERE</th><th>HAVING</th></tr>
+<tr><td>Filters</td><td>individual rows</td><td>whole groups</td></tr>
+<tr><td>Runs</td><td>before GROUP BY</td><td>after GROUP BY</td></tr>
+<tr><td>Aggregates allowed?</td><td>no: groups don't exist yet</td><td>yes: that's its purpose</td></tr>
+<tr><td>Can refer to</td><td>any column of the FROM tables</td><td>GROUP BY columns and aggregates</td></tr>
+<tr><td>Without GROUP BY</td><td>normal</td><td>treats the whole table as one group</td></tr></table>
+<p>Put row conditions in WHERE even when the query also has HAVING: fewer rows get grouped, so it runs faster. SQL Server won't let HAVING use a SELECT alias.</p>
+<pre>-- WHERE scenario: packages under $1000 lasting 7 or more days
+SELECT pname, price FROM PACKAGE WHERE price &lt; 1000 AND duration &gt;= 7;
+-- HAVING scenario: destinations whose average package price exceeds $1500
+SELECT DID, AVG(price) AS avg_price FROM PACKAGE GROUP BY DID HAVING AVG(price) &gt; 1500;</pre></div>
+
+<!-- ============================================================ -->
+<h2>2 · Views, constraints, referential integrity, triggers</h2>
+
+<div class="card"><h3>Materialized views in depth</h3>
+<p>A normal view stores only the query text, so every use reruns the query. A <b>materialized view (MV)</b> runs the query once and <b>stores the result rows on disk</b>, like a table. Reads are fast because no join or aggregation happens at read time. The stored copy goes <b>stale</b> when the base tables change, so it has to be <b>maintained</b> (refreshed).</p>
+<ul>
+<li><b>When to refresh.</b> <i>Immediate</i>: in the same transaction as each base-table change. Always fresh, but every INSERT, UPDATE and DELETE gets slower. <i>Deferred</i>: at commit, on demand, or the next time someone reads it. <i>Periodic</i>: on a schedule, e.g. nightly. Reads may be stale in between, which is fine for reports.</li>
+<li><b>How to refresh.</b> <i>Full (complete)</i>: rerun the whole query. Simple but expensive. <i>Incremental (fast)</i>: apply only the changes. For MV = R ⋈ S: inserting r into R adds r ⋈ S to the MV, and deleting r removes the MV rows built from r. This is easy for select-project-join queries and for SUM/COUNT. It's hard for MIN/MAX after a delete (if you delete the max, you have to recompute it) and for DISTINCT.</li>
+<li><b>Query rewriting:</b> the optimizer can answer a query on the base tables from an MV that covers it, even if the query never mentions the MV.</li>
+</ul>
+<pre>-- Textbook (Ullman 8.5)
+CREATE MATERIALIZED VIEW MovieProd AS
+  SELECT title, year, name FROM Movies, MovieExec WHERE producerC# = cert#;
+
+-- SQL Server: an "indexed view" is its materialized view
+CREATE VIEW dbo.SalesByProduct WITH SCHEMABINDING AS   -- base tables are locked against changes
+SELECT OI.productid,
+       SUM(OI.quantity * OI.price) AS total,
+       COUNT_BIG(*) AS n                    -- required when there is a GROUP BY
+FROM dbo.ORDER_ITEM OI                      -- two-part names (dbo.X) required
+GROUP BY OI.productid;
+CREATE UNIQUE CLUSTERED INDEX IX_SBP ON dbo.SalesByProduct(productid);  -- THIS step stores the rows
+
+-- Oracle:   CREATE MATERIALIZED VIEW mv REFRESH COMPLETE ON DEMAND AS SELECT ...;
+-- Postgres: CREATE MATERIALIZED VIEW mv AS SELECT ...;   REFRESH MATERIALIZED VIEW mv;</pre>
+<ul>
+<li>SQL Server maintains indexed views <b>immediately</b>, so they're never stale, but writes are slower. They don't allow OUTER JOIN, DISTINCT, subqueries, TOP, UNION or AVG/MIN/MAX. Store SUM and COUNT_BIG instead, and compute an average as SUM/COUNT.</li>
+<li><b>Good when</b> an expensive join or aggregate is read often and its base data changes rarely: dashboards, reports, data warehouses.</li>
+<li><b>Bad when</b> the base tables are updated heavily (every write pays the maintenance cost), when results must be exactly current, or when storage is tight.</li>
+</ul>
+<table class="t"><tr><th></th><th>View</th><th>Materialized view</th><th>#temp table</th><th>CTE (WITH)</th></tr>
+<tr><td>Stores</td><td>query text</td><td>query + result rows</td><td>rows (in tempdb)</td><td>nothing; it's a named subquery</td></tr>
+<tr><td>Lifetime</td><td>until DROP</td><td>until DROP</td><td>your session</td><td>one statement</td></tr>
+<tr><td>Fresh?</td><td>always</td><td>after a refresh</td><td>snapshot, never refreshed</td><td>always</td></tr>
+<tr><td>Pros</td><td>no storage, security, simpler queries, logical independence</td><td>fast reads, can be indexed</td><td>breaks a complex query into steps, private</td><td>readable steps inside one query</td></tr>
+<tr><td>Cons</td><td>recomputed on every use; few views are updatable</td><td>storage, refresh cost, may be stale</td><td>gone when the session ends; not shared</td><td>one statement only</td></tr></table>
+<pre>WITH Rich AS (SELECT aid FROM Account WHERE amount &gt; 2000) SELECT * FROM Rich;  -- CTE
+SELECT aid INTO #Rich FROM Account WHERE amount &gt; 2000;                       -- temp table</pre>
+<p><b>Exam angle:</b> 2023-24 S2 Q4(a), 4 marks: "differences, pros and cons of views, materialized and temporary views". Give one definition line, one pro and one con for each, then mention refresh. One-line summary: <i>a view saves you <b>writing</b> the query again; a materialized view saves you <b>running</b> it again.</i></p></div>
+
+<div class="card"><h3>Updatable views, WITH CHECK OPTION, INSTEAD OF triggers</h3>
+<p>You can only change data through a view if each view row maps to exactly one base row. <b>Standard SQL rules for an updatable view:</b> one table in FROM, no DISTINCT, no GROUP BY or aggregates, the table isn't used again in a subquery in WHERE, and SELECT includes enough columns that an INSERT can fill the rest with NULL or defaults. <b>SQL Server</b> also allows views with joins, but each INSERT or UPDATE can touch columns of only <b>one</b> base table.</p>
+<pre>CREATE VIEW ParamountMovies AS
+  SELECT title, year FROM Movies WHERE studioName = 'Paramount';
+INSERT INTO ParamountMovies VALUES ('Star Trek', 1979);
+-- stored with studioName NULL, so the new row VANISHES from the view
+
+-- Fix 1: include studioName in the view, and end it with ... WITH CHECK OPTION;
+--        which rejects INSERTs/UPDATEs whose rows wouldn't satisfy the view's WHERE
+-- Fix 2: an INSTEAD OF trigger supplies the hidden value
+CREATE TRIGGER ParamountInsert ON ParamountMovies
+INSTEAD OF INSERT AS
+  INSERT INTO Movies (title, year, studioName)
+  SELECT title, year, 'Paramount' FROM inserted;</pre>
+<p>INSTEAD OF triggers can make any view updatable. In SQL Server, views accept only INSTEAD OF triggers, not AFTER triggers. If asked whether a view can be updated, check for DISTINCT, aggregates, several tables, and NOT NULL columns missing from the view.</p></div>
+
+<div class="card"><h3>Constraints in depth: CHECK vs ASSERTION vs trigger (2024-25 S1 Q4b)</h3>
+<ul>
+<li><b>Attribute-based CHECK</b> (written on a column): checked only when a row is inserted or <i>that column</i> is updated. <b>Limitation:</b> standard SQL lets it contain a subquery on another table, but changes to that other table won't re-check it, so it can quietly become false. SQL Server doesn't allow subqueries in CHECK at all.</li>
+<li><b>Tuple-based CHECK</b> (written at table level, can use several columns of the same row): checked when a row is inserted or updated. A DELETE never runs any CHECK.</li>
+<li><b>Assertion:</b> a schema-level condition over any tables. It's checked after <i>every</i> INSERT, UPDATE or DELETE on any table it mentions. It's the most complete option but expensive, and SQL Server doesn't implement it.</li>
+<li><b>Trigger:</b> event → condition → action. It fires only on the events and table you list, so imitating an assertion takes one trigger per table and event. Unlike the others, it can also <i>do</i> things, not just reject changes.</li>
+</ul>
+<pre>-- Assertion: every program has at least one class (no FK can say this)
+CREATE ASSERTION ProgramHasClass CHECK (NOT EXISTS (
+  SELECT * FROM PROGRAM P WHERE NOT EXISTS (SELECT * FROM CLASS C WHERE C.PID = P.PID)));
+-- Deleting a CLASS row can break this rule; a CHECK on PROGRAM would never notice.
+
+-- Named constraints can be added and dropped later
+CREATE TABLE PROGRAM (PID INT PRIMARY KEY, Pname VARCHAR(50),
+  Fee DECIMAL(10,2) CONSTRAINT chk_fee CHECK (Fee &gt; 0));
+ALTER TABLE PROGRAM ADD CONSTRAINT uq_pname UNIQUE (Pname);
+ALTER TABLE PROGRAM DROP CONSTRAINT chk_fee;</pre>
+<p><b>Model answer:</b> (1) Key, FK and CHECK constraints are local to one table and are checked only when that row or column changes. (2) Triggers run custom code on specific events. (3) Assertions are database-wide conditions. For "validation across more than one table, checked on every insert, update or delete", the answer is <b>assertion</b>.</p></div>
+
+<div class="card"><h3>Referential integrity: the policies in detail</h3>
+<table class="t"><tr><th>Change</th><th>What happens</th></tr>
+<tr><td>INSERT a child row, or UPDATE its FK, to a value that isn't in the parent</td><td>Always <b>rejected</b>. The policies below don't apply.</td></tr>
+<tr><td>DELETE a parent row, or UPDATE a parent key</td><td>Handled by the <b>policy</b> you chose, set separately for ON DELETE and ON UPDATE</td></tr></table>
+<ul>
+<li><b>Default / NO ACTION:</b> the parent change is rejected if any child row still refers to it.</li>
+<li><b>CASCADE:</b> deleting a parent deletes its children. Updating a parent key from 123 to 456 changes the children's FK to 456 as well.</li>
+<li><b>SET NULL:</b> the children's FK becomes NULL (the column must allow NULL). SQL Server also has <b>SET DEFAULT</b>.</li>
+<li>A NULL FK value isn't checked; it means "no parent".</li>
+<li><b>Deferred checking</b> (<code>DEFERRABLE INITIALLY DEFERRED</code>) checks the FK only at COMMIT. You need it when two tables reference each other. SQL Server doesn't support it.</li>
+</ul>
+<pre>FOREIGN KEY (presC) REFERENCES MovieExec(cert)
+  ON DELETE SET NULL      -- exec deleted: keep the movie, president unknown
+  ON UPDATE CASCADE       -- exec's cert changes: follow it</pre>
+<p>Justify your choice. CASCADE suits rows that only exist because of the parent, like order items. SET NULL suits an optional link. NO ACTION (reject) suits cases where history must be kept.</p></div>
+
+<div class="card"><h3>Trigger terminology and textbook (standard SQL) syntax</h3>
+<ul>
+<li><b>ECA rule:</b> <b>E</b>vent = INSERT, DELETE, or UPDATE [OF col] ON table. <b>C</b>ondition = the WHEN clause; if it isn't TRUE, nothing happens. <b>A</b>ction = one SQL statement or a BEGIN…END block.</li>
+<li><b>Timing:</b> BEFORE, AFTER or INSTEAD OF. SQL Server has only AFTER (FOR means the same thing) and INSTEAD OF.</li>
+<li><b>Row-level</b> (<code>FOR EACH ROW</code>) runs once per changed row and sees <code>OLD ROW</code> and <code>NEW ROW</code>. <b>Statement-level</b> (<code>FOR EACH STATEMENT</code>, the default) runs once per statement and sees <code>OLD TABLE</code> and <code>NEW TABLE</code>.</li>
+<li>SQL Server triggers are statement-level only: <code>deleted</code> ≈ OLD TABLE, <code>inserted</code> ≈ NEW TABLE, and <code>IF UPDATE(col)</code> ≈ "UPDATE OF col".</li>
+</ul>
+<pre>-- Textbook: never let a net worth go down (row-level)
+CREATE TRIGGER NetWorthTrigger
+AFTER UPDATE OF netWorth ON MovieExec          -- event
+REFERENCING OLD ROW AS OldTuple, NEW ROW AS NewTuple
+FOR EACH ROW
+WHEN (OldTuple.netWorth &gt; NewTuple.netWorth)   -- condition
+  UPDATE MovieExec SET netWorth = OldTuple.netWorth WHERE cert = NewTuple.cert;  -- action
+
+-- The same in SQL Server (set-based)
+CREATE TRIGGER NetWorthTrigger ON MovieExec AFTER UPDATE AS
+IF UPDATE(netWorth)
+  UPDATE M SET netWorth = d.netWorth
+  FROM MovieExec M JOIN deleted d ON d.cert = M.cert JOIN inserted i ON i.cert = d.cert
+  WHERE d.netWorth &gt; i.netWorth;</pre></div>
+
+<div class="card"><h3>Enforcing a primary key with triggers instead of PRIMARY KEY (2025-26 S2 Q4c)</h3>
+<p>A primary key means <b>not NULL + unique</b>. Only INSERT and UPDATE can break it, never DELETE. So you need <b>AFTER INSERT and AFTER UPDATE triggers</b>. They check the table <i>after</i> the change, which also catches duplicates within a single multi-row INSERT.</p>
+<pre>CREATE TRIGGER trg_student_pk ON Student
+AFTER INSERT, UPDATE
+AS
+BEGIN
+  IF EXISTS (SELECT * FROM inserted WHERE sid IS NULL)
+     OR EXISTS (SELECT S.sid FROM Student S
+                WHERE S.sid IN (SELECT sid FROM inserted)
+                GROUP BY S.sid HAVING COUNT(*) &gt; 1)
+  BEGIN
+    RAISERROR('Primary key violation on Student.sid', 16, 1);
+    ROLLBACK TRANSACTION;
+  END
+END;</pre>
+<p>A deeper point worth making: without a real PK, Holds.sid and TxnLog.sid can't be declared as FKs (an FK must reference a PK or UNIQUE column). So referential integrity also needs triggers: on INSERT/UPDATE of a child, the sid must exist in Student; on DELETE/UPDATE of a Student, reject (or cascade) if the sid is still referenced.</p></div>
+
+<!-- ============================================================ -->
+<h2>3 · Indexes: theory and the "why"</h2>
+
+<div class="card"><h3>Clustered vs non-clustered, B+ tree vs hash, covering indexes</h3>
+<ul>
+<li><b>Clustered index:</b> the table's rows themselves are stored in key order (the leaf level <i>is</i> the data). There can be only <b>one</b> per table. In SQL Server the PRIMARY KEY becomes the clustered index by default. Matching rows sit next to each other, so even a wide range is one contiguous read.</li>
+<li><b>Non-clustered (secondary) index:</b> a separate sorted structure whose leaves point to the rows. You can have many. Each match may cost an extra random page read to fetch the row (a "lookup"). That's why it only pays off when <b>few</b> rows match. If most rows match (low selectivity), one sequential scan is cheaper, and the optimizer ignores the index.</li>
+<li><b>B+ tree:</b> balanced, with linked leaves. Supports =, ranges, ORDER BY, MIN/MAX and <code>LIKE 'abc%'</code>. <b>Hash index:</b> equality only, about one I/O, but no ranges and no ordering.</li>
+<li><b>Covering index:</b> contains every column the query needs, so the table is never read: <code>CREATE INDEX ix_q ON PRODUCT(quantity) INCLUDE (pname);</code></li>
+<li><b>The index can't be used for a seek</b> when the column is wrapped in a function (<code>WHERE YEAR(d) = 2024</code>; rewrite as <code>d &gt;= '2024-01-01' AND d &lt; '2025-01-01'</code>), when the pattern starts with a wildcard (<code>LIKE '%x'</code>), or when the first column of a composite index isn't filtered (an index on (a, b) doesn't help <code>WHERE b = 5</code>).</li>
+</ul>
+<p><b>Model answers (2024-25 S2 Q4c).</b> (i) Index on quantity, query <code>WHERE quantity &gt; 10</code>: it depends on selectivity. If only a few products match, yes: a seek plus a few lookups. If most match, no: a lookup per row costs more than a full scan. pname isn't in the index, so every match needs a lookup. (ii) AVG(price) with an index on price: there's no filter, so every price must still be read, and the tree can't skip anything. (MIN/MAX are different: they read just one end of the tree.) At best, scanning the narrower index instead of the table saves a little I/O.</p></div>
+
+<div class="card"><h3>Textbook cost model: should we build the index?</h3>
+<p>StarsIn takes 10 pages. Q1 finds the movies of a star s; Q2 finds the stars of a movie m. Each star or movie has 3 rows, on 3 different pages. Reading an index page costs 1 I/O. Modifying a page costs 2 (read + write) for the table, plus 2 per index. Q1 and Q2 happen with probabilities p1 and p2; an INSERT happens the rest of the time (1 − p1 − p2).</p>
+<table class="t"><tr><th>Indexes</th><th>Q1</th><th>Q2</th><th>INSERT</th><th>Average cost</th></tr>
+<tr><td>none</td><td>10</td><td>10</td><td>2</td><td>2 + 8p1 + 8p2</td></tr>
+<tr><td>on star</td><td>4</td><td>10</td><td>4</td><td>4 + 6p2</td></tr>
+<tr><td>on movie</td><td>10</td><td>4</td><td>4</td><td>4 + 6p1</td></tr>
+<tr><td>both</td><td>4</td><td>4</td><td>6</td><td>6 − 2p1 − 2p2</td></tr></table>
+<p>Pick the row with the smallest average for the given p1 and p2. If inserts dominate (small p1, p2), no index wins. If queries dominate, both indexes win. (If your slides use different numbers, follow the slides.)</p></div>
+
+<!-- ============================================================ -->
+<h2>4 · FD and normal-form theory</h2>
+
+<div class="card"><h3>Armstrong's axioms and derived rules</h3>
+<p>The axioms are <b>sound</b> (they only derive true FDs) and <b>complete</b> (they derive every FD that follows). If asked to "prove using Armstrong's axioms", write one step per line and name the rule. Otherwise, a closure X⁺ is enough.</p>
+<table class="t"><tr><th>Rule</th><th>Statement</th><th>Derived how</th></tr>
+<tr><td>Reflexivity</td><td>Y ⊆ X ⇒ X→Y (trivial)</td><td>axiom</td></tr>
+<tr><td>Augmentation</td><td>X→Y ⇒ XZ→YZ</td><td>axiom</td></tr>
+<tr><td>Transitivity</td><td>X→Y, Y→Z ⇒ X→Z</td><td>axiom</td></tr>
+<tr><td>Union</td><td>X→Y, X→Z ⇒ X→YZ</td><td>X→XY (augment by X), XY→YZ (augment by Y), then transitivity</td></tr>
+<tr><td>Decomposition</td><td>X→YZ ⇒ X→Y</td><td>YZ→Y (reflexivity), then transitivity</td></tr>
+<tr><td>Pseudo-transitivity</td><td>X→Y, WY→Z ⇒ WX→Z</td><td>WX→WY (augment by W), then transitivity</td></tr></table>
+<pre>F = {A→B, BC→D, D→E}.  Prove AC→E.
+1. A→B      given           4. AC→D   transitivity (2),(3)
+2. AC→BC    augment (1) by C 5. D→E    given
+3. BC→D     given           6. AC→E   transitivity (4),(5)</pre>
+<p>You can't split a <b>left</b> side: AB→C does <b>not</b> imply A→C.</p></div>
+
+<div class="card"><h3>Chase test: lossless join for any number of pieces</h3>
+<p>The two-piece rule only works for binary splits. The chase works for any decomposition.</p>
+<ul>
+<li>Make one row per piece. Use a plain letter (a, b…) for each attribute in that piece, and a subscripted letter (b1, c2…) for every other attribute.</li>
+<li>For each FD X→Y: if two rows agree on X, make them agree on Y. If either symbol is plain, use the plain one. Replace the symbol <b>everywhere</b> in that column.</li>
+<li>Repeat until nothing changes. If some row is entirely plain letters, the decomposition is <b>lossless</b>. If not, the final table is a counterexample.</li>
+</ul>
+<p>R(A,B,C,D), F = {A→B, B→C, CD→A}, pieces S1(A,D), S2(A,C), S3(B,C,D):</p>
+<table class="t"><tr><th></th><th>A</th><th>B</th><th>C</th><th>D</th></tr>
+<tr><td>S1</td><td>a</td><td>b1</td><td>c1</td><td>d</td></tr>
+<tr><td>S2</td><td>a</td><td>b2</td><td>c</td><td>d2</td></tr>
+<tr><td>S3</td><td>a3</td><td>b</td><td>c</td><td>d</td></tr>
+<tr><td colspan="5">A→B: S1 and S2 agree on a, so b2 := b1. B→C: S1 and S2 agree on b1, so c1 := c. Now S1 = (a, b1, c, d).<br>CD→A: S1 and S3 agree on (c, d), so a3 := a. Now S3 = (a, b, c, d), all plain, so it's <b>lossless</b> ✔</td></tr></table>
+<p>Lossy example: R(A,B,C), F = {A→B}, pieces (A,B) and (B,C). The rows are (a, b, c1) and (a2, b, c). They never agree on A, so nothing changes and neither row becomes all plain: <b>lossy</b>. The join creates the fake rows (a, b, c) and (a2, b, c1).</p></div>
+
+<div class="card"><h3>Dependency preservation: the correct test</h3>
+<p>Seeing an FD inside one piece is enough to show it's preserved, but not seeing it doesn't prove it's lost. It might follow from FDs in several pieces combined. Use this algorithm, which needs only closures under the <b>original</b> F:</p>
+<pre>for each X→Y in F:
+   Z := X
+   repeat  for each piece Ri:  Z := Z ∪ ( (Z ∩ Ri)⁺ ∩ Ri )
+   until Z stops changing
+   X→Y is preserved  iff  Y ⊆ Z</pre>
+<p>Example: R(A,B,C), F = {A→B, B→C, C→A}, pieces R1(A,B) and R2(B,C). Is C→A lost?</p>
+<table class="t"><tr><th>Piece</th><th>Z ∩ Ri</th><th>(Z ∩ Ri)⁺ ∩ Ri</th><th>Z</th></tr>
+<tr><td>start</td><td></td><td></td><td>{C}</td></tr>
+<tr><td>R2(B,C)</td><td>{C}</td><td>C⁺ = ABC → {B,C}</td><td>{B,C}</td></tr>
+<tr><td>R1(A,B)</td><td>{B}</td><td>B⁺ = ABC → {A,B}</td><td>{A,B,C}</td></tr></table>
+<p>A ∈ Z, so C→A is <b>preserved</b>, through C→B (in R2) and B→A (in R1). Check with AB→C on pieces (C,B), (A,C): Z stays {A,B}, so AB→C is <b>lost</b> ✔.</p></div>
+
+<div class="card"><h3>"Explain with examples how BCNF improves on 3NF" (2025-26 S2 Q1b)</h3>
+<p><b>Core idea:</b> 3NF still allows an FD X→A where X is <i>not</i> a superkey, as long as A is prime. That FD still repeats the same fact across many rows. BCNF forbids it: <b>the left side of every non-trivial FD must be a superkey</b>, so each fact is stored once.</p>
+<p><b>Example:</b> Teach(student, course, tutor), where <b>tutor → course</b> (each tutor teaches one course) and <b>student, course → tutor</b>. The keys are {student, course} and {student, tutor}. Every attribute is prime, so the table is <b>3NF</b>. But tutor → course has a non-superkey on the left, so it's <b>not BCNF</b>.</p>
+<table class="t"><tr><th>student</th><th>course</th><th>tutor</th></tr>
+<tr><td>Ann</td><td>DB</td><td>Tan</td></tr><tr><td>Bob</td><td>DB</td><td>Tan</td></tr><tr><td>Cal</td><td>DB</td><td>Tan</td></tr><tr><td>Ann</td><td>OS</td><td>Lim</td></tr></table>
+<ul><li><b>Redundancy:</b> "Tan teaches DB" is stored 3 times. <b>Update anomaly:</b> moving Tan to another course means changing 3 rows. <b>Insertion anomaly:</b> you can't record that a new tutor Lee teaches DB until a student has Lee. <b>Deletion anomaly:</b> deleting Ann's OS row loses the fact that Lim teaches OS.</li>
+<li><b>BCNF fix:</b> tutor⁺ = {tutor, course}, giving R1(<u>tutor</u>, course) and R2(<u>student, tutor</u>). It's lossless because the shared attribute, tutor, is the key of R1. All three anomalies are gone.</li>
+<li><b>The cost:</b> student, course → tutor is <b>lost</b>. Nothing stops Ann from getting two DB tutors without a join or a trigger.</li></ul>
+<p><b>The ladder:</b> 2NF removes non-prime attributes that depend on <i>part</i> of a key. 3NF removes non-prime attributes that depend on another non-key attribute (transitive). BCNF removes <i>any</i> FD whose left side isn't a superkey, even when the right side is prime.</p></div>
+
+<div class="card"><h3>3NF theory on a data instance (2023-24 S1 Q2b, Q2c)</h3>
+<p>R(A,B,C,D), F = {AB→C, C→B, A→D}. A is in every key. A⁺ = AD, AB⁺ = ABCD, AC⁺ = ACBD, so the keys are <b>AB and AC</b>. A, B, C are prime; D is not.</p>
+<ul><li><b>A→D violates 3NF:</b> A isn't a superkey and D isn't prime. It's a <b>partial dependency</b>: a non-prime attribute depends on <i>part</i> of a key, which also fails 2NF. C→B is fine for 3NF (B is prime) but violates BCNF.</li>
+<li><b>Consequences, shown on the data:</b> D repeats in every row with the same A (a1 appears 3 times with d1). <i>Update anomaly:</i> change D in one a1 row and the rows contradict each other. The given data already shows this: a2 has both d2 and d1. <i>Insertion anomaly:</i> you can't record "a5 has d3" without values for B and C. <i>Deletion anomaly:</i> deleting the only a3 row loses the fact that a3 maps to d1.</li>
+<li><b>3NF synthesis:</b> one relation per FD gives (A,B,C), (C,B), (A,D). Drop (C,B) because it's inside (A,B,C), which already contains the key AB. Result: <b>R1(A,B,C), R2(A,D)</b>.</li>
+<li><b>"Are the new relations necessarily smaller?"</b> No. Each has fewer attributes, but the join attribute (A) is stored in several tables, the total number of columns grows, and queries need joins. The row count may shrink because projection removes duplicates: R1 has 4 rows and R2 has 5, versus 7 in R.</li>
+<li><b>Other improvements:</b> (1) go to BCNF by splitting R1 on C→B into (C,B) and (A,C), which loses AB→C. (2) Declare PRIMARY KEY(A,B) to stop the duplicate rows in the instance. (3) Clean up the inconsistent a2 rows before enforcing A→D.</li></ul></div>
+
+<div class="card"><h3>1NF, 2NF, MVDs and 4NF</h3>
+<p>4NF ⊂ BCNF ⊂ 3NF ⊂ 2NF ⊂ 1NF.</p>
+<ul>
+<li><b>1NF:</b> every value is atomic. No lists in a cell (phones = "9123, 8456" ✘).</li>
+<li><b>2NF:</b> 1NF and no <b>partial dependency</b>. Example: Enroll(<u>sid, cid</u>, sname, grade) with sid → sname. sname depends on only part of the key, so it fails 2NF. Fix: Student(sid, sname) and Enroll(sid, cid, grade). If every key is a single attribute, the table is automatically 2NF.</li>
+<li><b>MVD X ↠ Y:</b> for a given X, the set of Y values doesn't depend on the other attributes. If two rows agree on X, swapping their Y values gives rows that are also in the table. Every FD is also an MVD.</li>
+</ul>
+<table class="t"><tr><th>course</th><th>teacher</th><th>book</th></tr>
+<tr><td>DB</td><td>Ann</td><td>Ullman</td></tr><tr><td>DB</td><td>Ann</td><td>Garcia</td></tr><tr><td>DB</td><td>Bob</td><td>Ullman</td></tr><tr><td>DB</td><td>Bob</td><td>Garcia</td></tr></table>
+<p>Here course ↠ teacher. There are no non-trivial FDs and the key is all three attributes, so it's <b>BCNF</b>, but every teacher × book pair is repeated. <b>4NF:</b> for every non-trivial MVD X ↠ Y, X must be a superkey. Decompose into CT(course, teacher) and CB(course, book). If a question asks "BCNF but still redundant?", the answer is an MVD.</p></div>
+
+<!-- ============================================================ -->
+<h2>5 · Relational algebra extras</h2>
+
+<div class="card"><h3>Bags, extended operators, expression trees, "at least 2" without γ</h3>
+<table class="t"><tr><th>Bag operation</th><th>Copies of t (n in R, m in S)</th><th>R = {1,1,2}, S = {1,2,2}</th></tr>
+<tr><td>R ∪ S</td><td>n + m</td><td>{1,1,1,2,2,2}</td></tr>
+<tr><td>R ∩ S</td><td>min(n, m)</td><td>{1,2}</td></tr>
+<tr><td>R − S</td><td>max(0, n − m)</td><td>{1}</td></tr></table>
+<ul>
+<li><b>δ(R)</b> removes duplicates (like SELECT DISTINCT). <b>τ<sub>L</sub>(R)</b> sorts by L; the result is a list, so τ goes last. <b>Extended π:</b> π<sub>A, B+C→X</sub>(R).</li>
+<li><b>Outer joins</b> pad dangling rows with ⊥ (NULL). R(A,B) = {(1,2),(3,4)}, S(B,C) = {(2,5),(6,7)}: R ⟕ S = {(1,2,5), (3,4,⊥)} and R ⟗ S = {(1,2,5), (3,4,⊥), (⊥,6,7)}.</li>
+<li>Set laws that fail for bags: R ∪ R = R, and (R ∪ S) − T = (R − T) ∪ (S − T).</li>
+</ul>
+<pre>Expression tree (leaves = tables, evaluated bottom-up):
+            π title,year
+                 |
+                 ∩
+              /     \
+  σ length≥100       σ studio='Fox'
+        |                 |
+      Movies            Movies
+
+"At least 2 different courses" without γ:
+T1 ← ρT1(sid1,cid1)(Took)    T2 ← ρT2(sid2,cid2)(Took)
+AtLeast2 ← π sid1 (σ sid1=sid2 ∧ cid1≠cid2 (T1 × T2))
+Exactly1 ← π sid(Took) − AtLeast2</pre></div>
+
+<div class="card"><h3>"Only / all the same" pattern and the family query (2023-24 S2 Q1b, S1 Q1)</h3>
+<p><b>"All their X are identical"</b> means there are no two rows for them that differ. Find students with two <i>differing</i> rows (self-join with an OR of ≠), then subtract them. Also require "has at least one row", or students with no internships would pass automatically.</p>
+<pre>S    ← ρS(sID)(π s1(Pairs)) ∪ ρS(sID)(π s2(Pairs))        -- students from Q1(a)
+TI   ← π sID,uID,aID,salary,startDate,endDate,country (TAKEUP_INTERNSHIP ⋈ INTERNSHIP)
+T1   ← ρT1(s,u1,a1,p1,b1,e1,c1)(TI)     T2 ← ρT2(t,u2,a2,p2,b2,e2,c2)(TI)
+Diff ← ρDiff(sID)(π s (σ s=t ∧ (a1≠a2 ∨ p1≠p2 ∨ b1≠b2 ∨ e1≠e2 ∨ c1≠c2) (T1 × T2)))
+Ans  ← (S ∩ π sID(TI)) − Diff</pre>
+<p>Don't natural-join COMPANY here. It shares both aID <i>and</i> country with INTERNSHIP, so the join would force the two countries to match.</p>
+<p><b>Parent and child on the same tour in 2022.</b> Rename the two TAKE_TOUR copies so that natural joins match the right columns:</p>
+<pre>T22 ← π uID (σ startDate ≥ '2022-01-01' ∧ startDate ≤ '2022-12-31' (TOURS))
+X   ← ρX(parentTravellerID, uID)(TAKE_TOUR)
+Y   ← ρY(childTravellerID, uID)(TAKE_TOUR)
+Fam ← PARENT ⋈ X ⋈ Y ⋈ T22                  -- parent id, child id, same uID
+Q1b ← π parentTravellerID (Fam)
+TA  ← π uID,aID (π uID(Fam) ⋈ π uID,pID(TOURS) ⋈ π pID,aID(TOUR_PACKAGE))
+C   ← γ aID; COUNT(uID)→n (TA)     M ← γ MAX(n)→m (C)
+Q1c ← π aID (σ n=m (C × M))                   -- agencies with the most such tours</pre>
+<p>Project before joining TOURS with TOUR_PACKAGE. Both tables have startDate and endDate, so a natural join would also match those dates and silently drop tours.</p></div>
+
+<div class="card"><h3>"Every day for the last 30 days" (2024-25 S2 Q2)</h3>
+<p>There's no Days table. Dividing by π<sub>date</sub>(window) only works if <i>every</i> day in the window had at least one session, so counting distinct dates is safer. Fix "today" as a stated assumption.</p>
+<pre>L    ← σ date ≥ '2025-04-01' ∧ date ≤ '2025-04-30' (SESSION)
+SD   ← π sID, date (L)                 -- remove repeat visits on the same day
+C    ← γ sID; COUNT(date)→n (SD)
+Enth ← π sID (σ n = 30 (C))
+E    ← L ⋈ Enth
+E1   ← ρE1(m1,s1,c1,d1,t1,st1,x1)(E)    E2 ← ρE2(m2,s2,c2,d2,t2,st2,x2)(E)
+Ans  ← π s1, s2 (σ c1=c2 ∧ d1=d2 ∧ t1=t2 ∧ st1=st2 ∧ s1≠s2 (E1 × E2))</pre>
+<p>"Same session" means the same (centre, instructor, date, start time). It does <i>not</i> mean the same mID, because each mID row is one student's attendance. Use ≠ when the question says "for each X, list the others", and &lt; for unordered pairs. For "in the last 6 months", apply the date range to the divisor <b>before</b> dividing.</p></div>
+
+<!-- ============================================================ -->
+<h2>6 · ER design</h2>
+
+<div class="card"><h3>Subclass and "isa": the theory answer and how to draw it (2025-26 S1 Q2a)</h3>
+<p><b>Model answer:</b> a <b>subclass</b> is an entity set whose members are a special subset of a <b>superclass</b>. Its members have extra attributes or relationships that the other members don't. The <b>isa</b> relationship (a triangle pointing to the superclass) says every subclass entity <i>is also</i> a superclass entity, matched one-to-one. It gives: <b>inheritance</b> (the subclass inherits all attributes, the key and the relationships, so you only draw what it adds); <b>no irrelevant attributes</b> (putting weight on Products would leave it NULL for every digital product); and <b>relationships specific to the subclass</b> (only physical products are stored in a Warehouse).</p>
+<pre>          (pid)  (name)  (price)  (brand)
+                  [ Products ]
+                  /          \
+               /isa\        /isa\
+                 |            |
+   [Physical Products]   [Digital Products]
+   (weight)(dimensions)   (fileSizeMB)(format)
+   (stockQty)             (downloadURL)
+   written by the triangles: {disjoint, total}</pre>
+<p><b>The key of Physical Products is pid</b>, inherited. Never give a subclass its own key.</p>
+<table class="t"><tr><th>Constraint</th><th>Meaning</th><th>How to show it</th></tr>
+<tr><td>Disjoint / overlapping</td><td>An entity can be in at most one subclass / in several</td><td>Write it beside the triangle. EER notation: <b>d</b> or <b>o</b> in a circle.</td></tr>
+<tr><td>Total / partial</td><td>Every superclass entity must be in some subclass / doesn't have to be</td><td>Write it. EER notation: a <b>double line</b> means total.</td></tr></table></div>
+
+<div class="card"><h3>ER with extensive specialization: research projects (2025-26 S2 Q1a, 18 marks)</h3>
+<p>Marks come from a multi-level hierarchy, relationships attached at the most general level that fits, constraints on every hierarchy, and written assumptions.</p>
+<pre>                 [Person] (pid, name, email)      {overlapping, partial}
+          ________/    |     \_________
+   isa   /         isa |          isa  \
+ [Professor]       [Student]        [Researcher]
+ (rank, office)    (matricNo)       (highestDegree, salary)
+                  /         \       {disjoint, total}
+              isa/           \isa
+       [PhDStudent]      [UGStudent]
+       (thesisTopic)     (programme, yearOfStudy)
+
+ [Project] (projID, title, startDate)
+     | isa  {partial: a project may not be funded}
+ [FundedProject]      [Grant] (grantID, startDate, endDate, amount)
+                      [GrantAgency] (agencyID, name)</pre>
+<table class="t"><tr><th>Relationship</th><th>Between</th><th>Multiplicity and why</th></tr>
+<tr><td>Creates (the professor is the principal investigator)</td><td>Project → Professor</td><td>many-one with a rounded arrow: every project has exactly one PI</td></tr>
+<tr><td>Supervises</td><td>PhDStudent → Professor</td><td>many-one: each PhD student has one supervisor</td></tr>
+<tr><td>ParticipatesIn</td><td>Student — Project</td><td>many-many. It hangs off <b>Student</b>, so PhD and UG students both inherit it</td></tr>
+<tr><td>Has</td><td>FundedProject — Grant</td><td>one-one. This is why FundedProject exists as a subclass</td></tr>
+<tr><td>AwardedBy</td><td>Grant → GrantAgency</td><td>many-one, with attribute <i>fundedPct</i> ("in whole or in part")</td></tr>
+<tr><td>HiredUnder</td><td>Researcher → Grant</td><td>many-one: the grant's project identifies the PI they assist</td></tr></table>
+<p><b>Assumptions:</b> a PhD student can also be hired as a Researcher, so Person is overlapping. Admin staff are none of these, so it's partial. "At least a Master's degree" can't be drawn, so state it as a constraint. Grant could instead be a weak entity owned by FundedProject.</p></div>
+
+<div class="card"><h3>ER design principles, and entity vs attribute</h3>
+<ul>
+<li><b>Faithfulness:</b> the model must match reality. Don't make Teaches many-one if a course can have co-lecturers.</li>
+<li><b>Avoid redundancy:</b> say each fact once. Giving Movies a studioName attribute <i>and</i> an Owns relationship to Studios is wrong ✘, because it leads to update anomalies.</li>
+<li><b>Simplicity:</b> don't add entity sets or relationships you don't need, or ones that can be derived from others.</li>
+<li><b>Entity or attribute?</b> Make E an attribute only if (1) every relationship involving E has its arrow pointing <i>into</i> E, (2) E's only key is all of its attributes (usually just one), and (3) no relationship involves E more than once. If Studio has only a name, make studioName an attribute of Movies. If it has an address, keep it as an entity.</li>
+<li><b>Weak entities:</b> the supporting relationship must be many-one from the weak entity to its owner, with referential integrity (rounded arrow, double diamond). The key is the owner's key plus the partial key (dashed underline). Use them sparingly: if a natural unique ID exists, use an ordinary entity.</li>
+</ul>
+<p>If asked to "critique this ER design", look for redundant attributes or relationships, wrong arrows, and one-attribute entities that should be attributes.</p></div>
+
+<div class="card"><h3>Multiway relationships, roles, relationship attributes, degree constraints</h3>
+<p><b>Multiway arrow:</b> in Contracts(Stars, Movies, Studios), an arrow into Studios means each (star, movie) pair relates to <b>at most one</b> studio.</p>
+<p><b>Converting to binary:</b> replace the diamond with a <b>connecting entity set</b> that has a many-one relationship to each participant. Any relationship attributes move onto the new entity.</p>
+<pre>Stars ◇ Movies ◇ Studios (Contracts, salary)   ⇒   Contract(salary) ──▶ Stars, ──▶ Movies, ──▶ Studios
+Relation: Contracts(starName, title, year, studioName, salary)</pre>
+<p><b>Roles:</b> when the same entity set appears twice in one relationship, label each edge with its role (e.g. "parent" and "child"). The relation then needs renamed columns:</p>
+<pre>Traveller ◇ Parent ◇ Traveller  (edges "parent", "child")
+PARENT(parentTravellerID, childTravellerID)  -- both are FKs to TRAVELLER; key = both (many-many)</pre>
+<p><b>Relationship attributes</b> describe the <i>combination</i>, not either entity on its own. Examples: grade on Enrolls(Student, Course), salary on Contracts.</p>
+<table class="t"><tr><th>Notation</th><th>Meaning</th><th>SQL</th></tr>
+<tr><td>plain line</td><td>any number</td><td></td></tr>
+<tr><td>arrow →</td><td>at most 1 (many-one)</td><td>FK that allows NULL</td></tr>
+<tr><td>rounded arrow</td><td>exactly 1 (referential integrity)</td><td>FK NOT NULL</td></tr>
+<tr><td>"≤ 10" on an edge</td><td>e.g. a movie has at most 10 stars</td><td>trigger or assertion</td></tr></table></div>
+
+<div class="card"><h3>Chat-session ER and "is the relational model suitable?" (2024-25 S2 Q1a)</h3>
+<pre>[Customer] (custID, name, email)
+     ^  rounded arrow: each session belongs to exactly one customer
+   &lt;Has&gt;
+[Session] (sessionID, startTime, endTime)
+     ^
+  &lt;&lt;Contains&gt;&gt;   (double diamond = identifying relationship)
+[[Turn]] (turnNo = partial key, promptText, responseText, promptTime, responseTime)</pre>
+<p>A Turn only exists inside its session and is numbered within it, so it's a <b>weak entity</b> with key (sessionID, turnNo). Tables: Customer(<u>custID</u>, …) · Session(<u>sessionID</u>, custID, …) · Turn(<u>sessionID, turnNo</u>, prompt, response, …).</p>
+<table class="t"><tr><th>For relational</th><th>Against relational</th></tr>
+<tr><td>Metadata (who, when) is fixed and structured. FKs enforce integrity. SQL makes analytics easy (sessions per customer). ACID transactions.</td>
+<td>Prompts and responses are free text. Sessions vary in length, and the order must be rebuilt with turnNo + ORDER BY. Responses can contain nested content (code, images), so the schema keeps changing or fills with NULLs. A session is always read as a whole, which suits a document.</td></tr></table>
+<p><b>Conclusion:</b> a hybrid. Use relational tables for customers and sessions, and store each transcript as a JSON document (in a document store, or in an <code>NVARCHAR(MAX)</code> column queried with <code>JSON_VALUE</code>/<code>OPENJSON</code>).</p></div>
+
+<!-- ============================================================ -->
+<h2>7 · Data models, XML, JSON, XPath</h2>
+
+<div class="card"><h3>Structured vs unstructured data: "list three differences" (2023-24 S1 Q4b, 6 marks)</h3>
+<table class="t"><tr><th>Aspect</th><th>Structured</th><th>Unstructured</th></tr>
+<tr><td>Schema</td><td>Predefined and fixed (tables, columns, types), defined <i>before</i> loading (schema-on-write)</td><td>No predefined model; meaning is worked out when reading (schema-on-read)</td></tr>
+<tr><td>Storage</td><td>Rows and columns in an RDBMS or data warehouse</td><td>Files (text, email, PDF, images, audio, video) in file systems, data lakes, NoSQL</td></tr>
+<tr><td>Querying</td><td>Easy: SQL can filter, join and aggregate precisely</td><td>Hard: needs full-text search, NLP or ML</td></tr>
+<tr><td>Integrity</td><td>The DBMS enforces types, keys, FKs and CHECKs</td><td>No constraints, so quality is hard to guarantee</td></tr>
+<tr><td>Flexibility</td><td>Rigid: schema changes (ALTER) are costly</td><td>Very flexible: store anything</td></tr>
+<tr><td>Volume</td><td>The smaller share of the world's data</td><td>The majority (about 80%)</td></tr></table>
+<p>Semi-structured data (XML, JSON) sits in between: no fixed schema, but tags make it self-describing and nestable. Write each difference as a contrast pair with a reason; it's usually 2 marks each.</p></div>
+
+<div class="card"><h3>Semistructured model, well-formed vs valid, IDREFS, XPath</h3>
+<p><b>Semistructured data model:</b> a graph of nodes with <b>labelled edges</b> (the tag and attribute names). Leaves hold values, and everything hangs off one root. It's <b>self-describing</b>: the labels travel with the data, so missing or repeated fields are easy. IDREF links turn the tree into a general graph.</p>
+<ul><li><b>Well-formed:</b> follows the syntax rules (one root, tags closed and properly nested, attribute values quoted). <b>Valid:</b> well-formed <i>and</i> matches its DTD, and every IDREF points to an existing ID.</li>
+<li><b>IDREFS:</b> a space-separated list of IDs, used for many-many links.</li></ul>
+<pre>&lt;!ATTLIST Star  starID  ID #REQUIRED  starredIn IDREFS #IMPLIED&gt;
+&lt;Star starID="cf" starredIn="sw esb"&gt;&lt;Name&gt;Carrie Fisher&lt;/Name&gt;
+  &lt;Address&gt;&lt;City&gt;Hollywood&lt;/City&gt;&lt;/Address&gt;&lt;/Star&gt;
+&lt;Movie movieID="sw"&gt;&lt;Title&gt;Star Wars&lt;/Title&gt;&lt;Year&gt;1977&lt;/Year&gt;&lt;/Movie&gt;
+&lt;Movie movieID="esb"&gt;&lt;Title&gt;Empire&lt;/Title&gt;&lt;Year&gt;1980&lt;/Year&gt;&lt;/Movie&gt;</pre>
+<table class="t"><tr><th>XPath</th><th>Meaning</th><th>Result</th></tr>
+<tr><td>/Stars/Star/Name</td><td>/ = child step, starting from the root</td><td>&lt;Name&gt;Carrie Fisher&lt;/Name&gt;</td></tr>
+<tr><td>//City</td><td>// = at any depth</td><td>&lt;City&gt;Hollywood&lt;/City&gt;</td></tr>
+<tr><td>//Star/@starID</td><td>@ = attribute</td><td>cf</td></tr>
+<tr><td>/Stars/Movie[Year &gt; 1978]/Title</td><td>[ ] = condition</td><td>&lt;Title&gt;Empire&lt;/Title&gt;</td></tr>
+<tr><td>//Movie[@movieID="sw"]/Title/text()</td><td>text() = the string content</td><td>Star Wars</td></tr>
+<tr><td>/Stars/*, //Movie[1]</td><td>* = any element; [1] = the first (positions start at 1)</td><td></td></tr></table>
+<p>To decide "is this document valid?": check it's well-formed first, then the DTD counts (*, +, ?) and element order, then the IDs (no duplicates, none starting with a digit) and IDREFs (no dangling references).</p></div>
+
+<div class="card"><h3>Writing an XML document from a given DTD (2025-26 S1 Q4c)</h3>
+<pre>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;Bookings&gt;
+  &lt;Booking BookingID="B1"&gt;
+    &lt;PID&gt;2001&lt;/PID&gt;&lt;Email&gt;alice@gmail.com&lt;/Email&gt;&lt;BookingDate&gt;2025-06-22&lt;/BookingDate&gt;
+    &lt;Guests&gt;2&lt;/Guests&gt;&lt;Status&gt;pending&lt;/Status&gt;
+  &lt;/Booking&gt;
+  &lt;Booking BookingID="B2"&gt;
+    &lt;PID&gt;2002&lt;/PID&gt;&lt;Email&gt;bob@gmail.com&lt;/Email&gt;&lt;BookingDate&gt;2025-07-01&lt;/BookingDate&gt;
+    &lt;Guests&gt;4&lt;/Guests&gt;&lt;Status&gt;confirmed&lt;/Status&gt;
+  &lt;/Booking&gt;
+&lt;/Bookings&gt;</pre>
+<ul><li>The root must be the element named in the DOCTYPE. <code>Booking+</code> means at least one Booking.</li>
+<li><b>Children must appear in exactly the DTD's order</b>, each exactly once (a comma list is a sequence). Swapping PID and Email makes it invalid.</li>
+<li>The ID attribute goes inside the start tag, in quotes. Its values must be unique and start with a letter or underscore. A <code>&lt;!DOCTYPE Bookings SYSTEM "bookings.dtd"&gt;</code> line can point to an external DTD.</li></ul></div>
+
+<div class="card"><h3>JSON → XML when items have different fields (2023-24 S1 Q4d)</h3>
+<p>Rules: the whole document needs <b>one root</b>. Each JSON key becomes an element. An <b>array becomes a wrapper element with one child per item</b>. If an item lacks a field, leave that element out; don't write a NULL placeholder. If an item contains a field with the same name you'd give the item, rename the item (e.g. RoleInfo) so the tags aren't ambiguous.</p>
+<pre>&lt;People&gt;
+  &lt;Person&gt;&lt;Name&gt;Alan&lt;/Name&gt;&lt;Age&gt;32&lt;/Age&gt;
+    &lt;Roles&gt;
+      &lt;RoleInfo&gt;&lt;Role&gt;Teaching Asst.&lt;/Role&gt;&lt;School&gt;SCSE&lt;/School&gt;&lt;Course&gt;SC2207&lt;/Course&gt;&lt;/RoleInfo&gt;
+      &lt;RoleInfo&gt;&lt;Role&gt;PhD Student&lt;/Role&gt;&lt;School&gt;MAE&lt;/School&gt;&lt;Supervisor&gt;Prof. David&lt;/Supervisor&gt;&lt;/RoleInfo&gt;
+    &lt;/Roles&gt;&lt;/Person&gt;
+  &lt;Person&gt;&lt;Name&gt;Belinda&lt;/Name&gt;&lt;Age&gt;28&lt;/Age&gt;
+    &lt;Roles&gt;&lt;RoleInfo&gt;&lt;Role&gt;Student&lt;/Role&gt;&lt;School&gt;SCSE&lt;/School&gt;&lt;/RoleInfo&gt;&lt;/Roles&gt;
+    &lt;Courses&gt;
+      &lt;CourseInfo&gt;&lt;Course&gt;SC2207&lt;/Course&gt;&lt;Grade&gt;A+&lt;/Grade&gt;&lt;/CourseInfo&gt;
+      &lt;CourseInfo&gt;&lt;Course&gt;SC2005&lt;/Course&gt;&lt;Grade&gt;A&lt;/Grade&gt;&lt;/CourseInfo&gt;
+    &lt;/Courses&gt;&lt;/Person&gt;
+&lt;/People&gt;</pre>
+<p>A matching DTD: <code>&lt;!ELEMENT Person (Name, Age, Roles, Courses?)&gt;</code>, <code>&lt;!ELEMENT RoleInfo (Role, School, (Course | Supervisor)?)&gt;</code>. Each element name is declared <b>once</b> for the whole DTD. Escape &amp; and &lt; in text as <code>&amp;amp;</code> and <code>&amp;lt;</code>.</p></div>
+
+<div class="card"><h3>XML → JSON mapping (2024-25 S2 Q4d)</h3>
+<p>"Four <b>types</b> of elements and one <b>type</b> of attribute" means 4 distinct tag names and 1 distinct attribute name, not 4 occurrences.</p>
+<pre>&lt;Library&gt;                               &lt;!-- element types: Library, Book, Title, Author --&gt;
+  &lt;Book isbn="B001"&gt;                    &lt;!-- attribute type: isbn --&gt;
+    &lt;Title&gt;Database Systems&lt;/Title&gt;&lt;Author&gt;Ullman&lt;/Author&gt;&lt;Author&gt;Widom&lt;/Author&gt;
+  &lt;/Book&gt;
+  &lt;Book isbn="B002"&gt;&lt;Title&gt;SQL Basics&lt;/Title&gt;&lt;Author&gt;Lee&lt;/Author&gt;&lt;/Book&gt;
+&lt;/Library&gt;
+
+{ "Library": { "Book": [
+    { "isbn": "B001", "Title": "Database Systems", "Author": ["Ullman", "Widom"] },
+    { "isbn": "B002", "Title": "SQL Basics",       "Author": ["Lee"] } ] } }</pre>
+<ul><li>An element with children becomes an object. A leaf element becomes "name": value. An attribute becomes a key (some write it as "@isbn").</li>
+<li>Repeated sibling elements become an array. Use an array even when there's only one item, so the structure stays consistent.</li>
+<li>Everything in XML is text. JSON adds types (numbers, true/false, null) and arrays, but has no attributes.</li></ul></div>
+
+<div class="card"><h3>Two DTD styles: nesting vs ID/IDREF (tweets 2023-24 S2 Q4d, forum 2025-26 S2 Q4f)</h3>
+<p>Relational schemas: <code>User(<u>userID</u>, name, …)</code> and <code>Post(<u>postID</u>, authorID → User, createdTime, title, body)</code>. Each post has one author, so the FK goes in Post (the "many" side).</p>
+<pre>&lt;!-- Style A: nest each user's posts inside the user (the nesting replaces the FK) --&gt;
+&lt;!ELEMENT Forum (User*)&gt;
+&lt;!ELEMENT User (Name, Programme, Year, Post*)&gt;   &lt;!-- * : a user may have no posts --&gt;
+&lt;!ATTLIST User userID ID #REQUIRED&gt;
+
+&lt;!-- Style B: flat lists linked by IDREF (mirrors the two tables) --&gt;
+&lt;!ELEMENT Forum (User*, Post*)&gt;
+&lt;!ELEMENT User (Name, Programme, Year)&gt;
+&lt;!ATTLIST User userID ID #REQUIRED&gt;
+&lt;!ELEMENT Post (CreatedTime, Title, Body)&gt;
+&lt;!ATTLIST Post postID ID #REQUIRED  author IDREF #REQUIRED&gt;
+&lt;!ELEMENT Name (#PCDATA)&gt; ... one #PCDATA line per leaf
+
+&lt;User userID="U1"&gt;&lt;Name&gt;Ann&lt;/Name&gt;&lt;Programme&gt;CS&lt;/Programme&gt;&lt;Year&gt;2&lt;/Year&gt;&lt;/User&gt;
+&lt;Post postID="P1" author="U1"&gt;&lt;CreatedTime&gt;2026-03-01T10:00&lt;/CreatedTime&gt;
+  &lt;Title&gt;Index help&lt;/Title&gt;&lt;Body&gt;Why (CountryNo, Date)?&lt;/Body&gt;&lt;/Post&gt;</pre>
+<ul><li><b>ID ↔ primary key, IDREF ↔ foreign key.</b> All IDs in a document share one namespace, so prefix them (U1, P1) to avoid clashes.</li>
+<li>A fixed list of values can be an attribute: <code>programme (CS|CE|DS) #REQUIRED</code>.</li></ul></div>
+
+<div class="card"><h3>DTD "grouped by class, no unique identifiers" (2024-25 S1 Q4c)</h3>
+<pre>&lt;!DOCTYPE Classes [
+&lt;!ELEMENT Classes (Class*)&gt;
+&lt;!ELEMENT Class   (Cdate, Ctime, Venue, Program, Trainer, Student*)&gt;
+&lt;!ELEMENT Program (PID, Pname, Fee)&gt;
+&lt;!ELEMENT Trainer (TID, Tname, Toffice)&gt;
+&lt;!ELEMENT Student (SID, Sname, Gender, PromoCode?)&gt;
+&lt;!ELEMENT Cdate (#PCDATA)&gt; ... one #PCDATA line per leaf
+]&gt;</pre>
+<p>Each class has exactly one program and one trainer (no symbol), and possibly no students (*). PromoCode belongs to the signup, so it goes under Student as optional (?). Nesting replaces the FKs. Program and trainer details still repeat in every class; removing that would need ID/IDREF, which the question rules out, so say so.</p></div>
+
+<!-- ============================================================ -->
+<h2>8 · Full answers to past-paper questions not covered before</h2>
+
+<div class="card"><h3>Bank schema (2023-24 S2): full trigger, tricky queries, output traces</h3>
+<p>The trigger must handle INSERT, UPDATE and DELETE, and work on many rows at once. Idea: turn every affected log row into (aid, delta) rows. New rows add their effect, old (deleted) rows subtract theirs. Then sum the deltas <b>per account</b> and apply them once. The GROUP BY matters because UPDATE…FROM with two matching rows for one account would apply only one of them.</p>
+<pre>CREATE TRIGGER trg_ActivityLog ON ActivityLog
+AFTER INSERT, UPDATE, DELETE
+AS
+BEGIN
+  UPDATE A SET amount = A.amount + D.delta
+  FROM Account A
+  JOIN (SELECT aid, SUM(delta) AS delta FROM (
+          SELECT aid1 AS aid, CASE WHEN optype='deposit' THEN amount ELSE -amount END AS delta
+          FROM inserted                                         -- apply new rows to aid1
+          UNION ALL SELECT aid2, amount FROM inserted WHERE optype='transfer'   -- + aid2
+          UNION ALL SELECT aid1, CASE WHEN optype='deposit' THEN -amount ELSE amount END
+          FROM deleted                                          -- undo old rows on aid1
+          UNION ALL SELECT aid2, -amount FROM deleted WHERE optype='transfer'
+        ) X GROUP BY aid) D
+    ON A.aid = D.aid;
+END;</pre>
+<p>Use <b>UNION ALL, not UNION</b>, so two identical deltas both count. If the question wants separate triggers, write one each for INSERT, DELETE and UPDATE.</p>
+<pre>-- at least 2 Checking AND 1 Saving accounts
+SELECT C.name FROM Customer C JOIN Owns O ON O.cid=C.cid JOIN Account A ON A.aid=O.aid
+GROUP BY C.cid, C.name
+HAVING SUM(CASE WHEN A.type='Checking' THEN 1 ELSE 0 END) &gt;= 2
+   AND SUM(CASE WHEN A.type='Saving'   THEN 1 ELSE 0 END) &gt;= 1;
+-- never transferred to OTHERS' accounts (transfers between your own accounts are fine)
+SELECT C.name FROM Customer C
+WHERE NOT EXISTS (SELECT * FROM ActivityLog L
+                  WHERE L.cid = C.cid AND L.optype = 'transfer'
+                    AND L.aid2 NOT IN (SELECT aid FROM Owns WHERE cid = C.cid));</pre>
+<table class="t"><tr><th>Trace</th><th>Joined rows</th><th>Output</th></tr>
+<tr><td>Q3b(i)</td><td>aid 1: logs 101, 102 · aid 3: 103 (as aid1) · aid 4: 103 (as aid2) · aid 2: none, so dropped</td><td>total_activity: 2, 1, 1 (no aid column)</td></tr>
+<tr><td>Q3b(ii)</td><td>aid 1 is owned by both Anna and James, giving (Anna,1)=2, (James,1)=2, (Charlie,3)=1, (Charlie,4)=1. ALL set = {2,1,1}</td><td>Anna, James</td></tr></table></div>
+
+<div class="card"><h3>Composite FK to a composite PK, and distinct conditional counts (2024-25 S1 Q3)</h3>
+<p>A class is identified by CLASS's whole key (PID, TID, Cdate), so SIGNUP's FK must be <b>one</b> clause naming all three columns. Three separate FKs fail, because PID on its own isn't a key of CLASS.</p>
+<pre>CREATE TABLE SIGNUP (
+  PID INT NOT NULL CHECK (PID BETWEEN 1000 AND 9999),   -- "4-digit integer"
+  TID INT NOT NULL CHECK (TID BETWEEN 1000 AND 9999),
+  Cdate DATE NOT NULL,
+  SID INT NOT NULL CHECK (SID BETWEEN 1000 AND 9999),
+  PromoCode VARCHAR(20) NULL,
+  PRIMARY KEY (PID, TID, Cdate, SID),
+  FOREIGN KEY (PID, TID, Cdate) REFERENCES CLASS(PID, TID, Cdate),
+  FOREIGN KEY (SID) REFERENCES STUDENT(SID));
+-- the class, program and trainer already exist, so insert only the student and the signup
+INSERT INTO STUDENT (SID, Sname, Gender) VALUES (3023, 'Johnny', 'M');
+INSERT INTO SIGNUP (PID, TID, Cdate, SID) VALUES (1001, 2012, '2024-12-15', 3023);
+
+-- trainers with more than 1000 students: male and female counts
+SELECT T.Tname,
+  COUNT(DISTINCT CASE WHEN S.Gender='M' THEN S.SID END) AS male,    -- DISTINCT: a student
+  COUNT(DISTINCT CASE WHEN S.Gender='F' THEN S.SID END) AS female   -- in 2 classes counts once
+FROM TRAINER T JOIN SIGNUP G ON G.TID = T.TID JOIN STUDENT S ON S.SID = G.SID
+GROUP BY T.TID, T.Tname
+HAVING COUNT(DISTINCT G.SID) &gt; 1000;</pre></div>
+
+</main>
+</body>
+</html>
